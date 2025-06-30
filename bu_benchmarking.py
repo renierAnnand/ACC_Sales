@@ -11,6 +11,7 @@ def create_bu_benchmark(df):
     Create comprehensive business unit benchmarking analysis
     """
     st.header("🏢 Business Unit Benchmarking")
+    st.markdown("*All amounts in Saudi Riyal (SAR)*")
     
     if df.empty:
         st.error("No data available for BU benchmarking")
@@ -82,7 +83,7 @@ def create_bu_overview(df):
             st.metric("Total Business Units", len(bu_metrics))
         
         with col2:
-            st.metric("Total Revenue", f"${total_revenue:,.0f}")
+            st.metric("Total Revenue", f"{total_revenue:,.0f} SAR")
         
         with col3:
             st.metric("Overall Profit Margin", f"{overall_margin:.1f}%")
@@ -96,11 +97,11 @@ def create_bu_overview(df):
         
         # Format for display
         display_metrics = bu_metrics.copy()
-        display_metrics['Total_Revenue'] = display_metrics['Total_Revenue'].apply(lambda x: f"${x:,.0f}")
-        display_metrics['Avg_Deal_Size'] = display_metrics['Avg_Deal_Size'].apply(lambda x: f"${x:,.0f}")
-        display_metrics['Profit'] = display_metrics['Profit'].apply(lambda x: f"${x:,.0f}")
-        display_metrics['Revenue_Per_Customer'] = display_metrics['Revenue_Per_Customer'].apply(lambda x: f"${x:,.0f}")
-        display_metrics['Revenue_Per_Salesperson'] = display_metrics['Revenue_Per_Salesperson'].apply(lambda x: f"${x:,.0f}")
+        display_metrics['Total_Revenue'] = display_metrics['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
+        display_metrics['Avg_Deal_Size'] = display_metrics['Avg_Deal_Size'].apply(lambda x: f"{x:,.0f} SAR")
+        display_metrics['Profit'] = display_metrics['Profit'].apply(lambda x: f"{x:,.0f} SAR")
+        display_metrics['Revenue_Per_Customer'] = display_metrics['Revenue_Per_Customer'].apply(lambda x: f"{x:,.0f} SAR")
+        display_metrics['Revenue_Per_Salesperson'] = display_metrics['Revenue_Per_Salesperson'].apply(lambda x: f"{x:,.0f} SAR")
         
         st.dataframe(display_metrics, use_container_width=True)
         
@@ -141,7 +142,7 @@ def create_overall_bu_comparison(df):
                 color='Total Line Amount',
                 color_continuous_scale='blues'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, xaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -194,38 +195,6 @@ def create_overall_bu_comparison(df):
             height=600
         )
         
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Performance ranking
-        st.subheader("🏆 BU Performance Rankings")
-        
-        # Calculate composite performance score
-        bu_metrics['Revenue_Score'] = (bu_metrics['Total Line Amount'] / bu_metrics['Total Line Amount'].max() * 40).round(1)
-        bu_metrics['Margin_Score'] = (bu_metrics['Profit_Margin'] / bu_metrics['Profit_Margin'].max() * 30).round(1)
-        bu_metrics['Customer_Score'] = (bu_metrics['Cust Name'] / bu_metrics['Cust Name'].max() * 20).round(1)
-        bu_metrics['Order_Score'] = (bu_metrics['Invoice No.'] / bu_metrics['Invoice No.'].max() * 10).round(1)
-        
-        bu_metrics['Composite_Score'] = (
-            bu_metrics['Revenue_Score'] + 
-            bu_metrics['Margin_Score'] + 
-            bu_metrics['Customer_Score'] + 
-            bu_metrics['Order_Score']
-        ).round(1)
-        
-        bu_ranking = bu_metrics.sort_values('Composite_Score', ascending=False).reset_index(drop=True)
-        bu_ranking['Rank'] = range(1, len(bu_ranking) + 1)
-        
-        fig = px.bar(
-            bu_ranking,
-            x='BU Name',
-            y='Composite_Score',
-            title='BU Composite Performance Score',
-            color='Composite_Score',
-            color_continuous_scale='viridis',
-            text='Rank'
-        )
-        fig.update_traces(texttemplate='#%{text}', textposition="outside")
-        fig.update_layout(height=400, xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
@@ -311,7 +280,7 @@ def create_financial_metrics(df):
                 arrowhead=2
             )
             
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, xaxis_title="Cost (SAR)", yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Unit economics
@@ -330,7 +299,7 @@ def create_financial_metrics(df):
                 color='Revenue_Per_Unit',
                 color_continuous_scale='blues'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, xaxis_title="Revenue per Unit (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -344,7 +313,7 @@ def create_financial_metrics(df):
                 color='Cost_Per_Unit',
                 color_continuous_scale='Reds'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, xaxis_title="Cost per Unit (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Financial performance table
@@ -353,10 +322,10 @@ def create_financial_metrics(df):
         display_financial = bu_financial.copy()
         financial_cols = ['Total_Revenue', 'Total_Cost', 'Gross_Profit']
         for col in financial_cols:
-            display_financial[col] = display_financial[col].apply(lambda x: f"${x:,.0f}")
+            display_financial[col] = display_financial[col].apply(lambda x: f"{x:,.0f} SAR")
         
-        display_financial['Revenue_Per_Unit'] = display_financial['Revenue_Per_Unit'].apply(lambda x: f"${x:,.2f}")
-        display_financial['Cost_Per_Unit'] = display_financial['Cost_Per_Unit'].apply(lambda x: f"${x:,.2f}")
+        display_financial['Revenue_Per_Unit'] = display_financial['Revenue_Per_Unit'].apply(lambda x: f"{x:,.2f} SAR")
+        display_financial['Cost_Per_Unit'] = display_financial['Cost_Per_Unit'].apply(lambda x: f"{x:,.2f} SAR")
         display_financial['Gross_Margin'] = display_financial['Gross_Margin'].apply(lambda x: f"{x:.1f}%")
         
         st.dataframe(display_financial[[
@@ -422,7 +391,7 @@ def create_operational_metrics(df):
                 color='Revenue_Per_Salesperson',
                 color_continuous_scale='viridis'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, xaxis_title="Revenue per Salesperson (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -456,7 +425,7 @@ def create_operational_metrics(df):
                 title='Customer Base vs Revenue',
                 color_continuous_scale='blues'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -469,7 +438,7 @@ def create_operational_metrics(df):
                 color='BU_Name',
                 title='Salesperson Count vs Productivity'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, yaxis_title="Revenue per Salesperson (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Operational metrics table
@@ -484,7 +453,7 @@ def create_operational_metrics(df):
         # Format monetary columns
         money_cols = ['Revenue_Per_Order', 'Revenue_Per_Customer', 'Revenue_Per_Salesperson']
         for col in money_cols:
-            efficiency_summary[col] = efficiency_summary[col].apply(lambda x: f"${x:,.0f}")
+            efficiency_summary[col] = efficiency_summary[col].apply(lambda x: f"{x:,.0f} SAR")
         
         st.dataframe(efficiency_summary, use_container_width=True)
         
@@ -541,7 +510,7 @@ def create_customer_analysis_by_bu(df):
                 color='Total Line Amount',
                 color_continuous_scale='blues'
             )
-            fig.update_layout(height=400, xaxis_tickangle=-45)
+            fig.update_layout(height=400, xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -564,7 +533,7 @@ def create_customer_analysis_by_bu(df):
                 title='Customer Base Size vs Revenue per Customer',
                 color='BU Name'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, yaxis_title="Revenue per Customer (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Top customers by BU
@@ -590,7 +559,7 @@ def create_customer_analysis_by_bu(df):
             orientation='h',
             height=600
         )
-        fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+        fig.update_layout(yaxis={'categoryorder': 'total ascending'}, xaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
@@ -616,7 +585,7 @@ def create_bu_trend_analysis(df):
             title='Monthly Revenue Trends by BU',
             markers=True
         )
-        fig.update_layout(height=500)
+        fig.update_layout(height=500, yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
         # Growth rate analysis
@@ -665,7 +634,7 @@ def create_bu_trend_analysis(df):
             title='Seasonal Patterns by BU (Average Monthly Revenue)',
             markers=True
         )
-        fig.update_layout(height=400, xaxis_tickangle=-45)
+        fig.update_layout(height=400, xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
         # Performance consistency
@@ -705,7 +674,7 @@ def create_bu_trend_analysis(df):
                 title='Annual Revenue Comparison by BU',
                 barmode='group'
             )
-            fig.update_layout(height=400, xaxis_tickangle=-45)
+            fig.update_layout(height=400, xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
