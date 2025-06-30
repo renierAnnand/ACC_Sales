@@ -1,0 +1,23 @@
+# Streamlit app framework
+streamlit>=1.30.0
+
+# Data processing
+pandas>=2.0.0
+openpyxl>=3.1.2
+
+# Visualization
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.18.0
+
+# Machine learning & forecasting
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+prophet>=1.2
+
+# Time and dates
+pytz>=2023.3
+holidays>=0.26
+
+# Optional: environment configuration
+python-dotenv>=1.0.0
