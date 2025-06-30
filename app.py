@@ -5,20 +5,18 @@ from datetime import datetime
 import sys
 import os
 
-# Add modules to path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
-
-# Import all modules
+# Import all modules directly (since they're in the same directory)
 try:
-    from modules import sales_dashboard
-    from modules import customer_segmentation
-    from modules import sales_forecasting
-    from modules import salesperson_performance
-    from modules import discount_analysis
-    from modules import bu_benchmarking
-    from modules import product_insights
+    import sales_dashboard
+    import customer_segmentation
+    import sales_forecasting
+    import salesperson_performance
+    import discount_analysis
+    import bu_benchmarking
+    import product_insights
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
+    st.error("Please make sure all module files are in the same directory as app.py")
 
 # Page configuration
 st.set_page_config(
