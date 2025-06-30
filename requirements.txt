@@ -13,7 +13,8 @@ plotly>=5.18.0
 # Machine learning & forecasting
 scikit-learn>=1.3.0
 xgboost>=2.0.0
-prophet>=1.2
+prophet==1.1.4
+
 
 # Time and dates
 pytz>=2023.3
