@@ -1,400 +1,386 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import seaborn as sns
-import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score
-from datetime import datetime, timedelta
-import warnings
-warnings.filterwarnings('ignore')
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-def load_data():
-    """Load customer data using the app's built-in data loading functions"""
-    import sys
-    
-    # Get the main module (app.py) functions
-    if 'app' in sys.modules:
-        app_module = sys.modules['app']
-        if hasattr(app_module, 'load_data'):
-            return app_module.load_data()
-    
-    # Fallback: try to access data via session state mechanism
-    if st.session_state.get('uploaded_file') is not None:
-        try:
-            uploaded_file = st.session_state['uploaded_file']
-            df = pd.read_excel(uploaded_file)
-            return df
-        except:
-            pass
-    
-    # If all else fails, return empty dataframe
-    st.error("Unable to load data. Please ensure the main app is running properly.")
-    return pd.DataFrame()
-
-def show_data_source():
-    """Show information about current data source"""
-    if st.session_state.get('uploaded_file') is not None:
-        filename = st.session_state['uploaded_file'].name
-        st.success(f"📊 **Data Source**: {filename}")
-    else:
-        st.info("📝 **Data Source**: Sample data")
-
-def calculate_rfm_scores(df, reference_date=None):
-    """Calculate RFM (Recency, Frequency, Monetary) scores for each customer"""
-    if df.empty or 'Customer Name' not in df.columns:
-        return pd.DataFrame()
-    
-    # Set reference date (latest date in data or today)
-    if reference_date is None:
-        if 'Invoice Date' in df.columns:
-            df['Invoice Date'] = pd.to_datetime(df['Invoice Date']).dt.tz_localize(None)
-            reference_date = df['Invoice Date'].max()
-        else:
-            reference_date = datetime.now()
-    
-    # Calculate RFM metrics
-    rfm_data = []
-    
-    for customer in df['Customer Name'].unique():
-        customer_data = df[df['Customer Name'] == customer]
-        
-        # Recency: Days since last purchase
-        if 'Invoice Date' in df.columns:
-            last_purchase = customer_data['Invoice Date'].max()
-            recency = (reference_date - last_purchase).days
-        else:
-            recency = 0  # Default if no date available
-        
-        # Frequency: Number of transactions
-        frequency = len(customer_data)
-        
-        # Monetary: Total sales amount
-        monetary = customer_data['Total Sales'].sum()
-        
-        # Additional metrics
-        avg_order_value = customer_data['Total Sales'].mean()
-        total_quantity = customer_data['Quantity'].sum() if 'Quantity' in customer_data.columns else 0
-        
-        # Profit metrics (if available)
-        total_profit = 0
-        avg_profit_margin = 0
-        if 'Profit' in customer_data.columns:
-            total_profit = customer_data['Profit'].sum()
-            avg_profit_margin = (total_profit / monetary * 100) if monetary > 0 else 0
-        
-        rfm_data.append({
-            'Customer Name': customer,
-            'Recency': recency,
-            'Frequency': frequency,
-            'Monetary': monetary,
-            'Avg Order Value': avg_order_value,
-            'Total Quantity': total_quantity,
-            'Total Profit': total_profit,
-            'Avg Profit Margin': avg_profit_margin,
-            'First Purchase': customer_data['Invoice Date'].min() if 'Invoice Date' in customer_data.columns else None,
-            'Last Purchase': customer_data['Invoice Date'].max() if 'Invoice Date' in customer_data.columns else None
-        })
-    
-    rfm_df = pd.DataFrame(rfm_data)
-    
-    # Calculate RFM scores (1-5 scale, 5 being the best)
-    rfm_df['R_Score'] = pd.qcut(rfm_df['Recency'].rank(method='first'), 5, labels=[5,4,3,2,1])
-    rfm_df['F_Score'] = pd.qcut(rfm_df['Frequency'].rank(method='first'), 5, labels=[1,2,3,4,5])
-    rfm_df['M_Score'] = pd.qcut(rfm_df['Monetary'].rank(method='first'), 5, labels=[1,2,3,4,5])
-    
-    # Convert to numeric
-    rfm_df['R_Score'] = pd.to_numeric(rfm_df['R_Score'])
-    rfm_df['F_Score'] = pd.to_numeric(rfm_df['F_Score'])
-    rfm_df['M_Score'] = pd.to_numeric(rfm_df['M_Score'])
-    
-    # Calculate RFM combined score
-    rfm_df['RFM_Score'] = rfm_df['R_Score'].astype(str) + rfm_df['F_Score'].astype(str) + rfm_df['M_Score'].astype(str)
-    rfm_df['RFM_Score_Numeric'] = rfm_df['R_Score'] + rfm_df['F_Score'] + rfm_df['M_Score']
-    
-    return rfm_df
-
-def segment_customers_rfm(rfm_df):
-    """Segment customers based on RFM scores using business rules"""
-    if rfm_df.empty:
-        return rfm_df
-    
-    def get_segment(row):
-        r, f, m = row['R_Score'], row['F_Score'], row['M_Score']
-        
-        # Champions: High value, frequent, recent customers
-        if r >= 4 and f >= 4 and m >= 4:
-            return 'Champions'
-        
-        # Loyal Customers: High frequency and monetary, moderate recency
-        elif f >= 4 and m >= 4:
-            return 'Loyal Customers'
-        
-        # Potential Loyalists: Recent customers with good frequency
-        elif r >= 4 and f >= 3:
-            return 'Potential Loyalists'
-        
-        # New Customers: Very recent, low frequency
-        elif r >= 4 and f <= 2:
-            return 'New Customers'
-        
-        # Promising: Recent with moderate frequency and monetary
-        elif r >= 3 and f >= 2 and m >= 2:
-            return 'Promising'
-        
-        # Need Attention: Moderate recency, frequency, and monetary
-        elif r >= 2 and f >= 2 and m >= 2:
-            return 'Need Attention'
-        
-        # About to Sleep: Low recency but had good frequency/monetary
-        elif r <= 2 and f >= 3 and m >= 3:
-            return 'About to Sleep'
-        
-        # At Risk: Low recency, was valuable
-        elif r <= 2 and m >= 4:
-            return 'At Risk'
-        
-        # Cannot Lose Them: Very low recency but high monetary
-        elif r <= 1 and m >= 4:
-            return 'Cannot Lose Them'
-        
-        # Hibernating: Low scores across the board but not lost
-        elif r <= 2 and f <= 2 and m <= 2:
-            return 'Hibernating'
-        
-        # Lost: Very low recency and frequency
-        elif r <= 1 and f <= 1:
-            return 'Lost'
-        
-        else:
-            return 'Others'
-    
-    rfm_df['Segment'] = rfm_df.apply(get_segment, axis=1)
-    
-    # Add segment priority for action planning
-    segment_priority = {
-        'Champions': 1,
-        'Loyal Customers': 2, 
-        'Potential Loyalists': 3,
-        'Cannot Lose Them': 4,
-        'At Risk': 5,
-        'About to Sleep': 6,
-        'Need Attention': 7,
-        'Promising': 8,
-        'New Customers': 9,
-        'Hibernating': 10,
-        'Lost': 11,
-        'Others': 12
-    }
-    
-    rfm_df['Segment Priority'] = rfm_df['Segment'].map(segment_priority)
-    
-    return rfm_df
-
-def create_segment_summary(rfm_df):
-    """Create summary statistics for each customer segment"""
-    if rfm_df.empty or 'Segment' not in rfm_df.columns:
-        return pd.DataFrame()
-    
-    summary = rfm_df.groupby('Segment').agg({
-        'Customer Name': 'count',
-        'Monetary': ['sum', 'mean'],
-        'Frequency': 'mean',
-        'Recency': 'mean',
-        'Total Profit': ['sum', 'mean'],
-        'Avg Profit Margin': 'mean',
-        'Avg Order Value': 'mean'
-    }).round(2)
-    
-    # Flatten column names
-    summary.columns = ['Customer Count', 'Total Revenue', 'Avg Revenue', 
-                      'Avg Frequency', 'Avg Recency', 'Total Profit', 
-                      'Avg Profit', 'Avg Profit Margin', 'Avg Order Value']
-    
-    # Calculate percentage of customers
-    summary['Customer %'] = (summary['Customer Count'] / summary['Customer Count'].sum() * 100).round(1)
-    
-    # Calculate revenue percentage
-    summary['Revenue %'] = (summary['Total Revenue'] / summary['Total Revenue'].sum() * 100).round(1)
-    
-    # Sort by segment priority
-    segment_order = ['Champions', 'Loyal Customers', 'Potential Loyalists', 'Cannot Lose Them',
-                    'At Risk', 'About to Sleep', 'Need Attention', 'Promising', 
-                    'New Customers', 'Hibernating', 'Lost', 'Others']
-    
-    summary = summary.reindex([seg for seg in segment_order if seg in summary.index])
-    
-    return summary
-
-def create_rfm_visualizations(rfm_df):
-    """Create RFM analysis visualizations"""
-    
-    if rfm_df.empty:
-        return None, None, None
-    
-    # 1. RFM Score Distribution
-    fig_scores = make_subplots(
-        rows=1, cols=3,
-        subplot_titles=('Recency Score', 'Frequency Score', 'Monetary Score'),
-        specs=[[{"type": "histogram"}, {"type": "histogram"}, {"type": "histogram"}]]
-    )
-    
-    fig_scores.add_trace(
-        go.Histogram(x=rfm_df['R_Score'], nbinsx=5, name='Recency', marker_color='lightblue'),
-        row=1, col=1
-    )
-    
-    fig_scores.add_trace(
-        go.Histogram(x=rfm_df['F_Score'], nbinsx=5, name='Frequency', marker_color='lightgreen'),
-        row=1, col=2
-    )
-    
-    fig_scores.add_trace(
-        go.Histogram(x=rfm_df['M_Score'], nbinsx=5, name='Monetary', marker_color='lightcoral'),
-        row=1, col=3
-    )
-    
-    fig_scores.update_layout(title_text="📊 RFM Score Distributions", showlegend=False, height=400)
-    
-    # 2. Customer Segments Pie Chart
-    if 'Segment' in rfm_df.columns:
-        segment_counts = rfm_df['Segment'].value_counts()
-        
-        fig_segments = px.pie(
-            values=segment_counts.values,
-            names=segment_counts.index,
-            title="🎯 Customer Segments Distribution",
-            color_discrete_sequence=px.colors.qualitative.Set3
-        )
-        fig_segments.update_traces(textposition='inside', textinfo='percent+label')
-        fig_segments.update_layout(height=500)
-    else:
-        fig_segments = None
-    
-    # 3. RFM 3D Scatter Plot
-    fig_3d = px.scatter_3d(
-        rfm_df,
-        x='Recency',
-        y='Frequency', 
-        z='Monetary',
-        color='Segment' if 'Segment' in rfm_df.columns else 'RFM_Score_Numeric',
-        title="🔄 3D RFM Analysis",
-        hover_data=['Customer Name'],
-        height=600
-    )
-    
-    return fig_scores, fig_segments, fig_3d
-
-def main():
-    """Main function for customer segmentation"""
-    
-    st.title("👥 Customer Segmentation Analysis")
-    st.markdown("---")
-    
-    # Show data source information
-    show_data_source()
-    
-    # Load data
-    with st.spinner("Loading customer data..."):
-        df = load_data()
+def create_customer_segmentation(df):
+    """
+    Create comprehensive customer segmentation analysis
+    """
+    st.header("👥 Customer Segmentation Analysis")
     
     if df.empty:
-        st.error("No data available. Please check your data source.")
+        st.error("No data available for customer segmentation")
         return
     
-    # Sidebar filters
-    st.sidebar.header("🔍 Filters")
+    # Create customer summary
+    customer_summary = create_customer_summary(df)
     
-    # Business Unit filter
-    if 'Business Unit' in df.columns:
-        business_units = ['All'] + sorted(df['Business Unit'].unique().tolist())
-        selected_bu = st.sidebar.selectbox("Business Unit", business_units)
-        
-        if selected_bu != 'All':
-            df = df[df['Business Unit'] == selected_bu]
-    
-    # Year filter
-    if 'Invoice Date' in df.columns:
-        df['Invoice Date'] = pd.to_datetime(df['Invoice Date']).dt.tz_localize(None)
-        years = ['All'] + sorted(df['Invoice Date'].dt.year.unique().tolist(), reverse=True)
-        selected_year = st.sidebar.selectbox("Year", years)
-        
-        if selected_year != 'All':
-            df = df[df['Invoice Date'].dt.year == selected_year]
-    
-    # Display filtered data info
-    st.sidebar.markdown(f"**Filtered Data**: {len(df):,} records")
-    
-    # Calculate RFM scores
-    with st.spinner("Calculating RFM scores..."):
-        rfm_df = calculate_rfm_scores(df)
-    
-    if rfm_df.empty:
-        st.error("Unable to calculate RFM scores. Please check your data.")
+    if customer_summary.empty:
+        st.error("Unable to create customer summary")
         return
     
-    # Segment customers
-    with st.spinner("Segmenting customers..."):
-        rfm_df = segment_customers_rfm(rfm_df)
-        summary_df = create_segment_summary(rfm_df)
+    # Segmentation options
+    segmentation_type = st.selectbox(
+        "Select Segmentation Method",
+        ["RFM Analysis", "Value-Based Segmentation", "Geographic Segmentation", "Behavioral Segmentation"]
+    )
     
-    # Key metrics
-    st.subheader("📊 Customer Portfolio Overview")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Customers", f"{len(rfm_df):,}")
-    
-    with col2:
-        st.metric("Total Revenue", f"${rfm_df['Monetary'].sum():,.0f}")
-    
-    with col3:
-        avg_clv = rfm_df['Monetary'].mean()
-        st.metric("Avg Customer Value", f"${avg_clv:,.0f}")
-    
-    with col4:
-        segments_count = rfm_df['Segment'].nunique()
-        st.metric("Customer Segments", f"{segments_count}")
-    
-    # RFM Analysis Results
-    st.subheader("🎯 RFM Analysis Results")
-    
-    # Create visualizations
-    fig_scores, fig_segments, fig_3d = create_rfm_visualizations(rfm_df)
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        if fig_scores:
-            st.plotly_chart(fig_scores, use_container_width=True)
-    
-    with col2:
-        if fig_segments:
-            st.plotly_chart(fig_segments, use_container_width=True)
-    
-    # 3D Visualization
-    st.plotly_chart(fig_3d, use_container_width=True)
-    
-    # Customer Segments Summary
-    st.subheader("📋 Customer Segments Summary")
-    
-    if not summary_df.empty:
-        # Display summary table
-        st.dataframe(summary_df.style.format({
-            'Total Revenue': '${:,.0f}',
-            'Avg Revenue': '${:,.0f}',
-            'Total Profit': '${:,.0f}',
-            'Avg Profit': '${:,.0f}',
-            'Avg Order Value': '${:,.0f}',
-            'Avg Profit Margin': '{:.1f}%',
-            'Customer %': '{:.1f}%',
-            'Revenue %': '{:.1f}%'
-        }))
+    if segmentation_type == "RFM Analysis":
+        create_rfm_analysis(df, customer_summary)
+    elif segmentation_type == "Value-Based Segmentation":
+        create_value_based_segmentation(customer_summary)
+    elif segmentation_type == "Geographic Segmentation":
+        create_geographic_segmentation(df)
+    elif segmentation_type == "Behavioral Segmentation":
+        create_behavioral_segmentation(df, customer_summary)
 
-if __name__ == "__main__":
-    main()
+def create_customer_summary(df):
+    """
+    Create customer summary with key metrics
+    """
+    try:
+        # Calculate customer metrics
+        customer_metrics = df.groupby(['Cust No.', 'Cust Name', 'Country', 'Local', 'Cust Class Code']).agg({
+            'Total Line Amount': ['sum', 'mean', 'count'],
+            'Invoice Date': ['min', 'max'],
+            'QTY': 'sum',
+            'Profit': 'sum' if 'Profit' in df.columns else 'count'
+        }).reset_index()
+        
+        # Flatten column names
+        customer_metrics.columns = [
+            'Customer_No', 'Customer_Name', 'Country', 'Local_International', 'Customer_Class',
+            'Total_Revenue', 'Avg_Order_Value', 'Order_Count', 'First_Purchase', 'Last_Purchase',
+            'Total_Quantity', 'Total_Profit'
+        ]
+        
+        # Calculate additional metrics
+        customer_metrics['Days_Since_Last_Purchase'] = (
+            pd.Timestamp.now() - customer_metrics['Last_Purchase']
+        ).dt.days
+        
+        customer_metrics['Customer_Lifetime_Days'] = (
+            customer_metrics['Last_Purchase'] - customer_metrics['First_Purchase']
+        ).dt.days + 1
+        
+        customer_metrics['Purchase_Frequency'] = (
+            customer_metrics['Order_Count'] / customer_metrics['Customer_Lifetime_Days'] * 365
+        ).fillna(0)
+        
+        return customer_metrics
+        
+    except Exception as e:
+        st.error(f"Error creating customer summary: {e}")
+        return pd.DataFrame()
+
+def create_rfm_analysis(df, customer_summary):
+    """
+    Create RFM (Recency, Frequency, Monetary) analysis
+    """
+    st.subheader("📊 RFM Analysis")
+    
+    try:
+        # Calculate RFM scores
+        rfm_data = customer_summary.copy()
+        
+        # Recency (lower is better)
+        rfm_data['R_Score'] = pd.qcut(
+            rfm_data['Days_Since_Last_Purchase'].rank(method='first', ascending=False),
+            5, labels=[5, 4, 3, 2, 1]
+        ).astype(int)
+        
+        # Frequency (higher is better)
+        rfm_data['F_Score'] = pd.qcut(
+            rfm_data['Order_Count'].rank(method='first'),
+            5, labels=[1, 2, 3, 4, 5]
+        ).astype(int)
+        
+        # Monetary (higher is better)
+        rfm_data['M_Score'] = pd.qcut(
+            rfm_data['Total_Revenue'].rank(method='first'),
+            5, labels=[1, 2, 3, 4, 5]
+        ).astype(int)
+        
+        # Combined RFM Score
+        rfm_data['RFM_Score'] = (
+            rfm_data['R_Score'].astype(str) + 
+            rfm_data['F_Score'].astype(str) + 
+            rfm_data['M_Score'].astype(str)
+        )
+        
+        # Customer segments based on RFM
+        rfm_data['Customer_Segment'] = rfm_data.apply(classify_rfm_segment, axis=1)
+        
+        # Display RFM metrics
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # RFM segment distribution
+            segment_counts = rfm_data['Customer_Segment'].value_counts()
+            
+            fig = px.pie(
+                values=segment_counts.values,
+                names=segment_counts.index,
+                title='Customer Segment Distribution'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # RFM scatter plot
+            fig = px.scatter(
+                rfm_data,
+                x='F_Score',
+                y='M_Score',
+                color='Customer_Segment',
+                size='Total_Revenue',
+                title='RFM Scatter Plot (Frequency vs Monetary)',
+                hover_data=['Customer_Name', 'R_Score']
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # RFM segment summary table
+        st.subheader("📋 RFM Segment Summary")
+        
+        segment_summary = rfm_data.groupby('Customer_Segment').agg({
+            'Customer_Name': 'count',
+            'Total_Revenue': ['sum', 'mean'],
+            'Order_Count': 'mean',
+            'Days_Since_Last_Purchase': 'mean'
+        }).round(2)
+        
+        segment_summary.columns = [
+            'Customer_Count', 'Total_Revenue', 'Avg_Revenue_Per_Customer',
+            'Avg_Order_Count', 'Avg_Days_Since_Last_Purchase'
+        ]
+        
+        st.dataframe(segment_summary, use_container_width=True)
+        
+        # Top customers by segment
+        st.subheader("🏆 Top Customers by Segment")
+        
+        selected_segment = st.selectbox(
+            "Select segment to view top customers",
+            rfm_data['Customer_Segment'].unique()
+        )
+        
+        top_customers = rfm_data[
+            rfm_data['Customer_Segment'] == selected_segment
+        ].nlargest(10, 'Total_Revenue')[
+            ['Customer_Name', 'Total_Revenue', 'Order_Count', 'Days_Since_Last_Purchase', 'RFM_Score']
+        ]
+        
+        st.dataframe(top_customers, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error in RFM analysis: {e}")
+
+def classify_rfm_segment(row):
+    """
+    Classify customers into segments based on RFM scores
+    """
+    r, f, m = row['R_Score'], row['F_Score'], row['M_Score']
+    
+    if r >= 4 and f >= 4 and m >= 4:
+        return 'Champions'
+    elif r >= 3 and f >= 3 and m >= 3:
+        return 'Loyal Customers'
+    elif r >= 4 and f <= 2:
+        return 'New Customers'
+    elif r <= 2 and f >= 3 and m >= 3:
+        return 'At Risk'
+    elif r <= 2 and f <= 2 and m >= 3:
+        return 'Cannot Lose Them'
+    elif r <= 2 and f <= 2 and m <= 2:
+        return 'Lost Customers'
+    elif f >= 3 and m <= 2:
+        return 'Price Sensitive'
+    else:
+        return 'Others'
+
+def create_value_based_segmentation(customer_summary):
+    """
+    Create value-based customer segmentation
+    """
+    st.subheader("💰 Value-Based Segmentation")
+    
+    try:
+        # Define value segments based on total revenue
+        revenue_percentiles = customer_summary['Total_Revenue'].quantile([0.8, 0.95, 1.0])
+        
+        def classify_value_segment(revenue):
+            if revenue >= revenue_percentiles[0.95]:
+                return 'VIP Customers'
+            elif revenue >= revenue_percentiles[0.8]:
+                return 'High Value'
+            elif revenue >= customer_summary['Total_Revenue'].median():
+                return 'Medium Value'
+            else:
+                return 'Low Value'
+        
+        customer_summary['Value_Segment'] = customer_summary['Total_Revenue'].apply(classify_value_segment)
+        
+        # Visualization
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Value segment distribution
+            segment_dist = customer_summary['Value_Segment'].value_counts()
+            
+            fig = px.bar(
+                x=segment_dist.index,
+                y=segment_dist.values,
+                title='Customer Count by Value Segment',
+                color=segment_dist.values,
+                color_continuous_scale='viridis'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Revenue by segment
+            revenue_by_segment = customer_summary.groupby('Value_Segment')['Total_Revenue'].sum()
+            
+            fig = px.pie(
+                values=revenue_by_segment.values,
+                names=revenue_by_segment.index,
+                title='Revenue Distribution by Value Segment'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Segment comparison
+        st.subheader("📊 Segment Comparison")
+        
+        segment_comparison = customer_summary.groupby('Value_Segment').agg({
+            'Customer_Name': 'count',
+            'Total_Revenue': ['sum', 'mean'],
+            'Avg_Order_Value': 'mean',
+            'Order_Count': 'mean'
+        }).round(2)
+        
+        segment_comparison.columns = [
+            'Customer_Count', 'Total_Revenue', 'Avg_Revenue_Per_Customer',
+            'Avg_Order_Value', 'Avg_Order_Count'
+        ]
+        
+        st.dataframe(segment_comparison, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error in value-based segmentation: {e}")
+
+def create_geographic_segmentation(df):
+    """
+    Create geographic segmentation analysis
+    """
+    st.subheader("🌍 Geographic Segmentation")
+    
+    try:
+        # Country analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            country_metrics = df.groupby('Country').agg({
+                'Total Line Amount': 'sum',
+                'Cust Name': 'nunique',
+                'Invoice No.': 'nunique'
+            }).reset_index()
+            
+            country_metrics.columns = ['Country', 'Total_Revenue', 'Customer_Count', 'Order_Count']
+            country_metrics = country_metrics.sort_values('Total_Revenue', ascending=False)
+            
+            fig = px.bar(
+                country_metrics.head(10),
+                x='Country',
+                y='Total_Revenue',
+                title='Revenue by Country',
+                color='Total_Revenue',
+                color_continuous_scale='blues'
+            )
+            fig.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Local vs International
+            local_intl = df.groupby('Local').agg({
+                'Total Line Amount': 'sum',
+                'Cust Name': 'nunique'
+            }).reset_index()
+            
+            fig = px.pie(
+                local_intl,
+                values='Total Line Amount',
+                names='Local',
+                title='Local vs International Revenue'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Geographic summary table
+        st.subheader("📋 Geographic Summary")
+        st.dataframe(country_metrics, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error in geographic segmentation: {e}")
+
+def create_behavioral_segmentation(df, customer_summary):
+    """
+    Create behavioral segmentation based on purchase patterns
+    """
+    st.subheader("🎯 Behavioral Segmentation")
+    
+    try:
+        # Purchase frequency analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Frequency distribution
+            fig = px.histogram(
+                customer_summary,
+                x='Purchase_Frequency',
+                nbins=20,
+                title='Purchase Frequency Distribution',
+                labels={'Purchase_Frequency': 'Purchases per Year'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Order value distribution
+            fig = px.histogram(
+                customer_summary,
+                x='Avg_Order_Value',
+                nbins=20,
+                title='Average Order Value Distribution',
+                labels={'Avg_Order_Value': 'Average Order Value ($)'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Customer class analysis
+        st.subheader("🏢 Customer Class Analysis")
+        
+        class_analysis = df.groupby('Cust Class Code').agg({
+            'Total Line Amount': ['sum', 'mean'],
+            'Cust Name': 'nunique',
+            'QTY': 'sum'
+        }).round(2)
+        
+        class_analysis.columns = [
+            'Total_Revenue', 'Avg_Order_Value', 'Customer_Count', 'Total_Quantity'
+        ]
+        
+        st.dataframe(class_analysis, use_container_width=True)
+        
+        # Class distribution chart
+        fig = px.bar(
+            x=class_analysis.index,
+            y=class_analysis['Total_Revenue'],
+            title='Revenue by Customer Class',
+            color=class_analysis['Total_Revenue'],
+            color_continuous_scale='viridis'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error in behavioral segmentation: {e}")
