@@ -11,6 +11,7 @@ def create_product_insights(df):
     Create comprehensive product insights and analysis
     """
     st.header("📦 Product Insights & Analysis")
+    st.markdown("*All amounts in Saudi Riyal (SAR)*")
     
     if df.empty:
         st.error("No data available for product analysis")
@@ -65,7 +66,7 @@ def create_product_overview(df):
             st.metric("Product Categories", f"{total_categories:,}")
         
         with col4:
-            st.metric("Top Product Revenue", f"${top_product_revenue:,.0f}")
+            st.metric("Top Product Revenue", f"{top_product_revenue:,.0f} SAR")
         
         # Product performance distribution
         st.subheader("📈 Product Performance Distribution")
@@ -185,7 +186,7 @@ def create_brand_performance(df):
                 color='Total_Revenue',
                 color_continuous_scale='blues'
             )
-            fig.update_layout(height=500)
+            fig.update_layout(height=500, xaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -207,8 +208,7 @@ def create_brand_performance(df):
         # Brand portfolio matrix
         st.subheader("📊 Brand Portfolio Matrix")
         
-        # Create portfolio matrix based on revenue and growth
-        # Since we don't have historical data for growth, we'll use profit margin as proxy
+        # Create portfolio matrix based on revenue and profit margin
         fig = px.scatter(
             brand_metrics,
             x='Total_Revenue',
@@ -218,7 +218,7 @@ def create_brand_performance(df):
             hover_name='Brand',
             title='Brand Portfolio Matrix: Revenue vs Profit Margin',
             labels={
-                'Total_Revenue': 'Total Revenue ($)',
+                'Total_Revenue': 'Total Revenue (SAR)',
                 'Profit_Margin': 'Profit Margin (%)'
             },
             color_continuous_scale='viridis'
@@ -241,10 +241,10 @@ def create_brand_performance(df):
         
         # Format for display
         display_brands = brand_metrics.nlargest(20, 'Total_Revenue').copy()
-        display_brands['Total_Revenue'] = display_brands['Total_Revenue'].apply(lambda x: f"${x:,.0f}")
-        display_brands['Avg_Deal_Size'] = display_brands['Avg_Deal_Size'].apply(lambda x: f"${x:,.0f}")
-        display_brands['Profit'] = display_brands['Profit'].apply(lambda x: f"${x:,.0f}")
-        display_brands['Revenue_Per_Customer'] = display_brands['Revenue_Per_Customer'].apply(lambda x: f"${x:,.0f}")
+        display_brands['Total_Revenue'] = display_brands['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
+        display_brands['Avg_Deal_Size'] = display_brands['Avg_Deal_Size'].apply(lambda x: f"{x:,.0f} SAR")
+        display_brands['Profit'] = display_brands['Profit'].apply(lambda x: f"{x:,.0f} SAR")
+        display_brands['Revenue_Per_Customer'] = display_brands['Revenue_Per_Customer'].apply(lambda x: f"{x:,.0f} SAR")
         display_brands['Profit_Margin'] = display_brands['Profit_Margin'].apply(lambda x: f"{x:.1f}%")
         
         st.dataframe(display_brands[[
@@ -328,7 +328,7 @@ def create_product_categories(df):
                 title='Category Diversity: Products vs Revenue',
                 color_continuous_scale='viridis'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Category performance trends
@@ -351,7 +351,7 @@ def create_product_categories(df):
             title='Top 5 Categories - Monthly Revenue Trends',
             markers=True
         )
-        fig.update_layout(height=400)
+        fig.update_layout(height=400, yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
         # Category efficiency analysis
@@ -365,7 +365,7 @@ def create_product_categories(df):
             color='Revenue_Per_Product',
             color_continuous_scale='plasma'
         )
-        fig.update_layout(height=400, xaxis_tickangle=-45)
+        fig.update_layout(height=400, xaxis_tickangle=-45, yaxis_title="Revenue per Product (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
@@ -378,7 +378,12 @@ def create_product_profitability(df):
     st.subheader("💰 Product Profitability Analysis")
     
     try:
-        # Calculate product profitability
+        # Check if cost data is available
+        if 'Total Cost' not in df.columns:
+            st.warning("Cost data not available for profitability analysis")
+            return
+        
+        # Calculate product profitability - handle missing cost data
         product_profit = df.groupby(['Item Number', 'Brand']).agg({
             'Total Line Amount': 'sum',
             'Total Cost': 'sum',
@@ -386,17 +391,28 @@ def create_product_profitability(df):
             'Invoice No.': 'nunique'
         }).reset_index()
         
-        # Calculate profit metrics
-        product_profit['Profit'] = product_profit['Total Line Amount'] - product_profit['Total Cost']
-        product_profit['Profit_Margin'] = (
-            product_profit['Profit'] / product_profit['Total Line Amount'] * 100
-        ).round(2)
-        product_profit['Profit_Per_Unit'] = (
-            product_profit['Profit'] / product_profit['QTY']
-        ).round(2)
+        # Fill NaN values with 0 for cost data
+        product_profit['Total Cost'] = product_profit['Total Cost'].fillna(0)
         
-        # Remove products with no cost data
-        product_profit = product_profit[product_profit['Total_Cost'] > 0]
+        # Calculate profit metrics only for products with cost data
+        product_profit['Profit'] = product_profit['Total Line Amount'] - product_profit['Total Cost']
+        product_profit['Profit_Margin'] = np.where(
+            product_profit['Total Line Amount'] != 0,
+            (product_profit['Profit'] / product_profit['Total Line Amount'] * 100).round(2),
+            0
+        )
+        product_profit['Profit_Per_Unit'] = np.where(
+            product_profit['QTY'] != 0,
+            (product_profit['Profit'] / product_profit['QTY']).round(2),
+            0
+        )
+        
+        # Filter products with meaningful cost data
+        products_with_cost = product_profit[product_profit['Total Cost'] > 0]
+        
+        if products_with_cost.empty:
+            st.warning("No products found with cost data for profitability analysis")
+            return
         
         # Profitability distribution
         col1, col2 = st.columns(2)
@@ -404,13 +420,13 @@ def create_product_profitability(df):
         with col1:
             # Profit margin distribution
             fig = px.histogram(
-                product_profit,
+                products_with_cost,
                 x='Profit_Margin',
                 title='Product Profit Margin Distribution',
                 nbins=30,
                 labels={'Profit_Margin': 'Profit Margin (%)'}
             )
-            fig.add_vline(x=product_profit['Profit_Margin'].mean(), 
+            fig.add_vline(x=products_with_cost['Profit_Margin'].mean(), 
                          line_dash="dash", line_color="red", 
                          annotation_text="Average")
             fig.update_layout(height=400)
@@ -418,7 +434,7 @@ def create_product_profitability(df):
         
         with col2:
             # Revenue vs Profit scatter
-            sample_products = product_profit.sample(min(500, len(product_profit)))
+            sample_products = products_with_cost.sample(min(500, len(products_with_cost)))
             
             fig = px.scatter(
                 sample_products,
@@ -430,7 +446,7 @@ def create_product_profitability(df):
                 title='Revenue vs Profit Analysis',
                 color_continuous_scale='RdYlGn'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, xaxis_title="Revenue (SAR)", yaxis_title="Profit (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Top and bottom performers
@@ -441,12 +457,12 @@ def create_product_profitability(df):
         with col1:
             # Most profitable products
             st.write("**Most Profitable Products**")
-            top_profit = product_profit.nlargest(10, 'Profit')[
+            top_profit = products_with_cost.nlargest(10, 'Profit')[
                 ['Item Number', 'Brand', 'Profit', 'Profit_Margin', 'Total Line Amount']
             ].copy()
             
-            top_profit['Profit'] = top_profit['Profit'].apply(lambda x: f"${x:,.0f}")
-            top_profit['Total Line Amount'] = top_profit['Total Line Amount'].apply(lambda x: f"${x:,.0f}")
+            top_profit['Profit'] = top_profit['Profit'].apply(lambda x: f"{x:,.0f} SAR")
+            top_profit['Total Line Amount'] = top_profit['Total Line Amount'].apply(lambda x: f"{x:,.0f} SAR")
             top_profit['Profit_Margin'] = top_profit['Profit_Margin'].apply(lambda x: f"{x:.1f}%")
             
             st.dataframe(top_profit, use_container_width=True)
@@ -454,12 +470,12 @@ def create_product_profitability(df):
         with col2:
             # Least profitable products
             st.write("**Least Profitable Products**")
-            bottom_profit = product_profit.nsmallest(10, 'Profit')[
+            bottom_profit = products_with_cost.nsmallest(10, 'Profit')[
                 ['Item Number', 'Brand', 'Profit', 'Profit_Margin', 'Total Line Amount']
             ].copy()
             
-            bottom_profit['Profit'] = bottom_profit['Profit'].apply(lambda x: f"${x:,.0f}")
-            bottom_profit['Total Line Amount'] = bottom_profit['Total Line Amount'].apply(lambda x: f"${x:,.0f}")
+            bottom_profit['Profit'] = bottom_profit['Profit'].apply(lambda x: f"{x:,.0f} SAR")
+            bottom_profit['Total Line Amount'] = bottom_profit['Total Line Amount'].apply(lambda x: f"{x:,.0f} SAR")
             bottom_profit['Profit_Margin'] = bottom_profit['Profit_Margin'].apply(lambda x: f"{x:.1f}%")
             
             st.dataframe(bottom_profit, use_container_width=True)
@@ -467,7 +483,7 @@ def create_product_profitability(df):
         # Profitability by brand
         st.subheader("🏷️ Profitability by Brand")
         
-        brand_profitability = product_profit.groupby('Brand').agg({
+        brand_profitability = products_with_cost.groupby('Brand').agg({
             'Profit': 'sum',
             'Total Line Amount': 'sum',
             'Item Number': 'nunique'
@@ -491,16 +507,16 @@ def create_product_profitability(df):
             color='Profit_Margin',
             color_continuous_scale='RdYlGn'
         )
-        fig.update_layout(height=400, xaxis_tickangle=-45)
+        fig.update_layout(height=400, xaxis_tickangle=-45, yaxis_title="Profit (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
         # Profit improvement opportunities
         st.subheader("💡 Profit Improvement Opportunities")
         
         # High revenue, low margin products
-        improvement_opportunities = product_profit[
-            (product_profit['Total Line Amount'] > product_profit['Total Line Amount'].quantile(0.75)) &
-            (product_profit['Profit_Margin'] < product_profit['Profit_Margin'].quantile(0.25))
+        improvement_opportunities = products_with_cost[
+            (products_with_cost['Total Line Amount'] > products_with_cost['Total Line Amount'].quantile(0.75)) &
+            (products_with_cost['Profit_Margin'] < products_with_cost['Profit_Margin'].quantile(0.25))
         ]
         
         if not improvement_opportunities.empty:
@@ -510,10 +526,12 @@ def create_product_profitability(df):
                 ['Item Number', 'Brand', 'Total Line Amount', 'Profit_Margin', 'QTY']
             ].copy()
             
-            opportunities['Total Line Amount'] = opportunities['Total Line Amount'].apply(lambda x: f"${x:,.0f}")
+            opportunities['Total Line Amount'] = opportunities['Total Line Amount'].apply(lambda x: f"{x:,.0f} SAR")
             opportunities['Profit_Margin'] = opportunities['Profit_Margin'].apply(lambda x: f"{x:.1f}%")
             
             st.dataframe(opportunities, use_container_width=True)
+        else:
+            st.info("No high revenue, low margin products identified")
         
     except Exception as e:
         st.error(f"Error creating product profitability analysis: {e}")
@@ -568,7 +586,7 @@ def create_volume_analysis(df):
                 title='Volume vs Unit Price Analysis',
                 labels={
                     'QTY': 'Total Quantity',
-                    'Revenue_Per_Unit': 'Revenue per Unit ($)'
+                    'Revenue_Per_Unit': 'Revenue per Unit (SAR)'
                 }
             )
             fig.update_layout(height=400)
@@ -637,7 +655,7 @@ def create_volume_analysis(df):
         fig.update_layout(height=500, showlegend=False)
         fig.update_xaxes(title_text="Month", row=2, col=1)
         fig.update_yaxes(title_text="Quantity", row=1, col=1)
-        fig.update_yaxes(title_text="Price ($)", row=2, col=1)
+        fig.update_yaxes(title_text="Price (SAR)", row=2, col=1)
         
         st.plotly_chart(fig, use_container_width=True)
         
@@ -747,7 +765,7 @@ def create_product_lifecycle(df):
                 color='Total_Revenue',
                 color_continuous_scale='viridis'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Product age analysis
@@ -763,7 +781,7 @@ def create_product_lifecycle(df):
             title='Product Age vs Revenue',
             labels={'Days_Active': 'Days in Market'}
         )
-        fig.update_layout(height=500)
+        fig.update_layout(height=500, yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
         # Stage-specific insights
@@ -773,7 +791,8 @@ def create_product_lifecycle(df):
         new_products = product_lifecycle[product_lifecycle['Lifecycle_Stage'] == 'New/Introduction']
         if not new_products.empty:
             st.success(f"🆕 **New Products**: {len(new_products)} products in introduction stage")
-            top_new = new_products.nlargest(5, 'Total_Revenue')[['Brand', 'Total_Revenue', 'Days_Active']]
+            top_new = new_products.nlargest(5, 'Total_Revenue')[['Brand', 'Total_Revenue', 'Days_Active']].copy()
+            top_new['Total_Revenue'] = top_new['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
             st.dataframe(top_new, use_container_width=True)
         
         # Declining products
@@ -782,7 +801,8 @@ def create_product_lifecycle(df):
             st.warning(f"📉 **Declining Products**: {len(declining_products)} products showing decline")
             top_declining = declining_products.nlargest(5, 'Total_Revenue')[
                 ['Brand', 'Total_Revenue', 'Days_Since_Last_Sale']
-            ]
+            ].copy()
+            top_declining['Total_Revenue'] = top_declining['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
             st.dataframe(top_declining, use_container_width=True)
         
         # Discontinued products
@@ -796,7 +816,8 @@ def create_product_lifecycle(df):
             st.success(f"🚀 **Growth Products**: {len(growth_products)} products in growth stage")
             top_growth = growth_products.nlargest(5, 'Sales_Frequency')[
                 ['Brand', 'Total_Revenue', 'Sales_Frequency']
-            ]
+            ].copy()
+            top_growth['Total_Revenue'] = top_growth['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
             st.dataframe(top_growth, use_container_width=True)
         
     except Exception as e:
