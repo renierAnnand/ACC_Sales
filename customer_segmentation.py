@@ -3,16 +3,13 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 def create_customer_segmentation(df):
     """
     Create comprehensive customer segmentation analysis
     """
     st.header("👥 Customer Segmentation Analysis")
+    st.markdown("*All amounts in Saudi Riyal (SAR)*")
     
     if df.empty:
         st.error("No data available for customer segmentation")
@@ -155,9 +152,13 @@ def create_rfm_analysis(df, customer_summary):
         }).round(2)
         
         segment_summary.columns = [
-            'Customer_Count', 'Total_Revenue', 'Avg_Revenue_Per_Customer',
+            'Customer_Count', 'Total_Revenue_SAR', 'Avg_Revenue_Per_Customer_SAR',
             'Avg_Order_Count', 'Avg_Days_Since_Last_Purchase'
         ]
+        
+        # Format currency columns
+        segment_summary['Total_Revenue_SAR'] = segment_summary['Total_Revenue_SAR'].apply(lambda x: f"{x:,.0f} SAR")
+        segment_summary['Avg_Revenue_Per_Customer_SAR'] = segment_summary['Avg_Revenue_Per_Customer_SAR'].apply(lambda x: f"{x:,.0f} SAR")
         
         st.dataframe(segment_summary, use_container_width=True)
         
@@ -173,7 +174,10 @@ def create_rfm_analysis(df, customer_summary):
             rfm_data['Customer_Segment'] == selected_segment
         ].nlargest(10, 'Total_Revenue')[
             ['Customer_Name', 'Total_Revenue', 'Order_Count', 'Days_Since_Last_Purchase', 'RFM_Score']
-        ]
+        ].copy()
+        
+        # Format revenue column
+        top_customers['Total_Revenue'] = top_customers['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
         
         st.dataframe(top_customers, use_container_width=True)
         
@@ -263,9 +267,13 @@ def create_value_based_segmentation(customer_summary):
         }).round(2)
         
         segment_comparison.columns = [
-            'Customer_Count', 'Total_Revenue', 'Avg_Revenue_Per_Customer',
-            'Avg_Order_Value', 'Avg_Order_Count'
+            'Customer_Count', 'Total_Revenue_SAR', 'Avg_Revenue_Per_Customer_SAR',
+            'Avg_Order_Value_SAR', 'Avg_Order_Count'
         ]
+        
+        # Format currency columns
+        for col in ['Total_Revenue_SAR', 'Avg_Revenue_Per_Customer_SAR', 'Avg_Order_Value_SAR']:
+            segment_comparison[col] = segment_comparison[col].apply(lambda x: f"{x:,.0f} SAR")
         
         st.dataframe(segment_comparison, use_container_width=True)
         
@@ -300,7 +308,7 @@ def create_geographic_segmentation(df):
                 color='Total_Revenue',
                 color_continuous_scale='blues'
             )
-            fig.update_layout(xaxis_tickangle=-45)
+            fig.update_layout(xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -320,7 +328,12 @@ def create_geographic_segmentation(df):
         
         # Geographic summary table
         st.subheader("📋 Geographic Summary")
-        st.dataframe(country_metrics, use_container_width=True)
+        
+        # Format the revenue column
+        display_country = country_metrics.copy()
+        display_country['Total_Revenue'] = display_country['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
+        
+        st.dataframe(display_country, use_container_width=True)
         
     except Exception as e:
         st.error(f"Error in geographic segmentation: {e}")
@@ -353,7 +366,7 @@ def create_behavioral_segmentation(df, customer_summary):
                 x='Avg_Order_Value',
                 nbins=20,
                 title='Average Order Value Distribution',
-                labels={'Avg_Order_Value': 'Average Order Value ($)'}
+                labels={'Avg_Order_Value': 'Average Order Value (SAR)'}
             )
             st.plotly_chart(fig, use_container_width=True)
         
@@ -370,7 +383,12 @@ def create_behavioral_segmentation(df, customer_summary):
             'Total_Revenue', 'Avg_Order_Value', 'Customer_Count', 'Total_Quantity'
         ]
         
-        st.dataframe(class_analysis, use_container_width=True)
+        # Format currency columns
+        display_class = class_analysis.copy()
+        display_class['Total_Revenue'] = display_class['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
+        display_class['Avg_Order_Value'] = display_class['Avg_Order_Value'].apply(lambda x: f"{x:,.0f} SAR")
+        
+        st.dataframe(display_class, use_container_width=True)
         
         # Class distribution chart
         fig = px.bar(
@@ -380,6 +398,7 @@ def create_behavioral_segmentation(df, customer_summary):
             color=class_analysis['Total_Revenue'],
             color_continuous_scale='viridis'
         )
+        fig.update_layout(yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
