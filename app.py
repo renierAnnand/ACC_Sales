@@ -88,7 +88,7 @@ st.markdown("""
 @st.cache_data
 def load_and_merge_data_from_file(uploaded_file):
     """
-    Load and merge data from an uploaded Excel file.
+    Load and merge data from an uploaded Excel or CSV file.
     Returns a cleaned and standardized DataFrame.
     """
     
@@ -96,54 +96,107 @@ def load_and_merge_data_from_file(uploaded_file):
         return pd.DataFrame()
     
     try:
-        # Read all sheets from the uploaded Excel file
-        excel_file = pd.ExcelFile(uploaded_file)
-        sheet_names = excel_file.sheet_names
+        file_name = uploaded_file.name.lower()
         
-        st.info(f"📊 Found {len(sheet_names)} sheets: {', '.join(sheet_names)}")
+        # Handle CSV files
+        if file_name.endswith('.csv'):
+            st.info("📊 Processing CSV file...")
+            
+            # Try different encodings for CSV
+            encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+            df = None
+            
+            for encoding in encodings:
+                try:
+                    df = pd.read_csv(uploaded_file, encoding=encoding)
+                    st.success(f"✅ CSV loaded successfully with {encoding} encoding")
+                    break
+                except UnicodeDecodeError:
+                    continue
+                except Exception as e:
+                    st.error(f"Error reading CSV: {str(e)}")
+                    continue
+            
+            if df is None:
+                st.error("❌ Could not read CSV file. Please check the file format.")
+                return pd.DataFrame()
+            
+            # Add metadata for CSV
+            df['Source_Sheet'] = 'CSV_Data'
+            df['Data_Year'] = datetime.now().year
+            
+            # Clean and standardize the data
+            cleaned_df = clean_and_standardize_data(df)
+            st.success(f"🎉 Successfully loaded {len(cleaned_df)} records from CSV")
+            
+            return cleaned_df
         
-        dataframes = []
-        
-        for sheet_name in sheet_names:
-            try:
-                df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
-                
-                # Add source sheet information
-                df['Source_Sheet'] = sheet_name
-                
-                # Add year information based on sheet name
-                if '2022' in sheet_name or '22' in sheet_name:
-                    df['Data_Year'] = 2022
-                elif '2023' in sheet_name or '23' in sheet_name:
-                    df['Data_Year'] = 2023
-                elif '2024' in sheet_name or '24' in sheet_name:
-                    df['Data_Year'] = 2024
-                else:
-                    df['Data_Year'] = None
-                
-                dataframes.append(df)
-                st.success(f"✅ Loaded {len(df)} records from {sheet_name}")
-                
-            except Exception as e:
-                st.warning(f"⚠️ Error loading sheet {sheet_name}: {str(e)}")
-                continue
-        
-        if not dataframes:
-            st.error("❌ No data could be loaded from any sheet")
+        # Handle Excel files
+        elif file_name.endswith(('.xlsx', '.xls')):
+            # Read all sheets from the uploaded Excel file
+            excel_file = pd.ExcelFile(uploaded_file)
+            sheet_names = excel_file.sheet_names
+            
+            st.info(f"📊 Found {len(sheet_names)} sheets: {', '.join(sheet_names)}")
+            
+            dataframes = []
+            
+            for sheet_name in sheet_names:
+                try:
+                    df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+                    
+                    # Skip empty sheets
+                    if df.empty:
+                        st.warning(f"⚠️ Sheet '{sheet_name}' is empty - skipping")
+                        continue
+                    
+                    # Add source sheet information
+                    df['Source_Sheet'] = sheet_name
+                    
+                    # Add year information based on sheet name
+                    if '2022' in sheet_name or '22' in sheet_name:
+                        df['Data_Year'] = 2022
+                    elif '2023' in sheet_name or '23' in sheet_name:
+                        df['Data_Year'] = 2023
+                    elif '2024' in sheet_name or '24' in sheet_name:
+                        df['Data_Year'] = 2024
+                    elif '2025' in sheet_name or '25' in sheet_name:
+                        df['Data_Year'] = 2025
+                    else:
+                        df['Data_Year'] = datetime.now().year
+                    
+                    dataframes.append(df)
+                    st.success(f"✅ Loaded {len(df)} records from '{sheet_name}'")
+                    
+                except Exception as e:
+                    st.warning(f"⚠️ Error loading sheet '{sheet_name}': {str(e)}")
+                    continue
+            
+            if not dataframes:
+                st.error("❌ No data could be loaded from any sheet")
+                return pd.DataFrame()
+            
+            # Combine all dataframes
+            combined_df = pd.concat(dataframes, ignore_index=True)
+            
+            # Clean and standardize the data
+            cleaned_df = clean_and_standardize_data(combined_df)
+            
+            st.success(f"🎉 Successfully loaded and merged {len(cleaned_df)} total records")
+            
+            return cleaned_df
+            
+        else:
+            st.error("❌ Unsupported file format. Please upload .xlsx, .xls, or .csv files.")
             return pd.DataFrame()
-        
-        # Combine all dataframes
-        combined_df = pd.concat(dataframes, ignore_index=True)
-        
-        # Clean and standardize the data
-        cleaned_df = clean_and_standardize_data(combined_df)
-        
-        st.success(f"🎉 Successfully loaded and merged {len(cleaned_df)} total records")
-        
-        return cleaned_df
         
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
+        st.error("💡 **Troubleshooting tips:**")
+        st.error("• Check if the file is corrupted")
+        st.error("• Ensure the file has proper headers")
+        st.error("• Try saving the file in a different format")
+        st.error("• Contact support if the issue persists")
         return pd.DataFrame()
 
 def clean_and_standardize_data(df):
@@ -682,35 +735,100 @@ def show_home_page():
         """)
     
     # File format guide
-    with st.expander("📁 Excel File Format Guide", expanded=False):
-        st.markdown("""
-        **📊 Excel File Requirements:**
+    with st.expander("📁 Excel File Format Guide & Upload Test", expanded=False):
+        col1, col2 = st.columns([2, 1])
         
-        **File Structure:**
-        - File format: `.xlsx` or `.xls`
-        - Multiple sheets supported (e.g., "Sales 2022", "Sales 2023", "Sales 2024")
-        - Data should start from row 1 with headers
+        with col1:
+            st.markdown("""
+            **📊 File Requirements:**
+            
+            **Supported Formats:**
+            - Excel files: `.xlsx`, `.xls`
+            - CSV files: `.csv`
+            - Maximum file size: 200MB
+            
+            **Required Columns** (any of these variations):
+            - `Customer Name` or `Customer`
+            - `Total Sales` or `Sales` or `Revenue`
+            - `Invoice Date` or `Date`
+            
+            **Optional Columns** (for enhanced analytics):
+            - `Business Unit` or `BU`
+            - `Salesperson` or `Sales Rep`
+            - `Item Description` or `Product`
+            - `Quantity`, `Unit Price`, `Total Cost`, `Discount`, `Profit`
+            - `Country`, `Location`, `Invoice Number`
+            
+            **📝 Data Tips:**
+            - Date formats: Excel date format or YYYY-MM-DD
+            - Numbers: No special formatting needed
+            - Text: Any text format is fine
+            - Missing optional columns will be handled automatically
+            """)
+            
+        with col2:
+            st.markdown("**🧪 Test File Upload:**")
+            
+            # Quick upload test
+            test_file = st.file_uploader(
+                "Test upload here",
+                type=['xlsx', 'xls', 'csv'],
+                help="Upload a test file to check compatibility",
+                key="test_uploader"
+            )
+            
+            if test_file is not None:
+                st.success("✅ Upload working!")
+                st.info(f"**File:** {test_file.name}")
+                st.info(f"**Size:** {test_file.size / (1024*1024):.1f} MB")
+                st.info(f"**Type:** {test_file.type}")
+                
+                # Basic file validation
+                if test_file.name.lower().endswith(('.xlsx', '.xls', '.csv')):
+                    st.success("🎯 File format supported!")
+                else:
+                    st.error("❌ Unsupported file format")
+                
+                if test_file.size < 200 * 1024 * 1024:  # 200MB
+                    st.success("📏 File size OK!")
+                else:
+                    st.error("📏 File too large (max 200MB)")
+                    
+                st.info("💡 If this test works, the main upload should work too!")
+            else:
+                st.info("🔄 Upload a test file above")
+                
+        # Common issues and solutions
+        st.markdown("---")
+        st.markdown("**🔧 Common Upload Issues:**")
         
-        **Required Columns** (any of these variations):
-        - `Customer Name` or `Customer`
-        - `Total Sales` or `Sales` or `Revenue`
-        - `Invoice Date` or `Date`
+        issues_col1, issues_col2 = st.columns(2)
         
-        **Optional Columns** (for enhanced analytics):
-        - `Business Unit` or `BU`
-        - `Salesperson` or `Sales Rep`
-        - `Item Description` or `Product`
-        - `Quantity`, `Unit Price`, `Total Cost`, `Discount`, `Profit`
-        - `Country`, `Location`, `Invoice Number`
-        
-        **📝 Data Tips:**
-        - Date formats: Excel date format or YYYY-MM-DD
-        - Numbers: No special formatting needed
-        - Text: Any text format is fine
-        - Missing optional columns will be handled automatically
-        """)
+        with issues_col1:
+            st.markdown("""
+            **File Selection Issues:**
+            - **Can't click "Browse files"** → Refresh page, try different browser
+            - **File dialog doesn't open** → Disable ad blockers, check browser permissions
+            - **File appears but doesn't upload** → Check file size (<200MB)
+            - **Upload button missing** → Scroll up to sidebar, check screen resolution
+            """)
+            
+        with issues_col2:
+            st.markdown("""
+            **File Processing Issues:**
+            - **"Error loading data"** → Check file format, ensure headers in first row
+            - **"No sheets found"** → Ensure Excel file has data sheets
+            - **"Empty dataframe"** → Check that file contains actual data
+            - **"Encoding error"** → Save as .xlsx instead of .xls
+            """)
+            
+        # Browser compatibility
+        st.markdown("**🌐 Browser Compatibility:**")
+        st.markdown("✅ **Recommended:** Chrome, Firefox, Safari, Edge (latest versions)")
+        st.markdown("⚠️ **Limited support:** Internet Explorer, very old browser versions")
         
         # Sample file download
+        st.markdown("---")
         st.markdown("**📥 Sample Template:**")
         
         # Create a sample Excel template for download
@@ -776,25 +894,71 @@ def main():
     # File Upload Section (Built-in)
     st.sidebar.subheader("📁 Data Upload")
     
+    # More prominent file uploader with expanded options
     uploaded_file = st.sidebar.file_uploader(
-        "Upload your Excel file",
-        type=['xlsx', 'xls'],
-        help="Upload your sales data Excel file with multiple sheets"
+        "Choose your Excel file",
+        type=['xlsx', 'xls', 'csv'],
+        help="Supported formats: Excel (.xlsx, .xls) or CSV (.csv)",
+        accept_multiple_files=False,
+        key="file_uploader"
     )
+    
+    # Add file format info
+    with st.sidebar.expander("📋 Supported File Formats", expanded=False):
+        st.markdown("""
+        **Excel Files:**
+        - `.xlsx` (Excel 2007+)
+        - `.xls` (Excel 97-2003)
+        
+        **CSV Files:**
+        - `.csv` (Comma-separated values)
+        
+        **File Size:** Up to 200MB
+        """)
     
     # Store uploaded file in session state
     if uploaded_file is not None:
         st.session_state['uploaded_file'] = uploaded_file
-        st.sidebar.success(f"✅ File uploaded: {uploaded_file.name}")
+        file_size = uploaded_file.size / (1024 * 1024)  # Convert to MB
+        st.sidebar.success(f"✅ **File uploaded successfully!**")
+        st.sidebar.info(f"📄 **File:** {uploaded_file.name}\n📊 **Size:** {file_size:.1f} MB")
+        
+        # Show file preview info
+        if uploaded_file.name.endswith(('.xlsx', '.xls')):
+            st.sidebar.info("🔄 Excel file detected - will read all sheets")
+        elif uploaded_file.name.endswith('.csv'):
+            st.sidebar.info("🔄 CSV file detected - ready to process")
+            
     elif 'uploaded_file' not in st.session_state:
         st.session_state['uploaded_file'] = None
-        st.sidebar.info("🔄 Using sample data")
+        st.sidebar.info("📝 **No file uploaded**\n🔄 Using sample data for demonstration")
     
-    # Clear data button
-    if st.sidebar.button("🗑️ Clear Uploaded Data"):
-        if 'uploaded_file' in st.session_state:
-            del st.session_state['uploaded_file']
-        st.rerun()
+    # Clear data button with confirmation
+    if st.session_state.get('uploaded_file') is not None:
+        if st.sidebar.button("🗑️ Clear Uploaded Data", type="secondary"):
+            if 'uploaded_file' in st.session_state:
+                del st.session_state['uploaded_file']
+            st.sidebar.success("✅ Data cleared - refresh to use sample data")
+            st.rerun()
+    
+    # Troubleshooting section
+    if st.sidebar.button("❓ Upload Not Working?"):
+        st.sidebar.markdown("""
+        **Try these solutions:**
+        
+        1. **Refresh the page** and try again
+        2. **Check file format** - use .xlsx, .xls, or .csv
+        3. **File size** - ensure file is under 200MB
+        4. **Clear browser cache** and reload
+        5. **Try a different browser** (Chrome, Firefox, Edge)
+        6. **Disable ad blockers** temporarily
+        
+        **Still having issues?**  
+        Use the sample data to explore the system, then try uploading again.
+        """)
+    
+    # Quick upload tips
+    st.sidebar.markdown("💡 **Tips:** Click 'Browse files' button above to select your Excel or CSV file")
     
     st.sidebar.markdown("---")
     
