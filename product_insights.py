@@ -3,7 +3,6 @@ import pandas as pd
 
 def load_data():
     """Load data using the app's built-in data loading functions"""
-    # Import the main app functions
     import sys
     
     # Get the main module (app.py) functions
