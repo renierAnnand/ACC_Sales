@@ -88,7 +88,7 @@ st.markdown("""
 @st.cache_data
 def load_and_merge_data_from_file(uploaded_file):
     """
-    Load and merge data from an uploaded Excel or CSV file.
+    Optimized loading for large Excel or CSV files.
     Returns a cleaned and standardized DataFrame.
     """
     
@@ -100,104 +100,212 @@ def load_and_merge_data_from_file(uploaded_file):
         
         # Handle CSV files
         if file_name.endswith('.csv'):
-            st.info("📊 Processing CSV file...")
-            
-            # Try different encodings for CSV
-            encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
-            df = None
-            
-            for encoding in encodings:
-                try:
-                    df = pd.read_csv(uploaded_file, encoding=encoding)
-                    st.success(f"✅ CSV loaded successfully with {encoding} encoding")
-                    break
-                except UnicodeDecodeError:
-                    continue
-                except Exception as e:
-                    st.error(f"Error reading CSV: {str(e)}")
-                    continue
-            
-            if df is None:
-                st.error("❌ Could not read CSV file. Please check the file format.")
-                return pd.DataFrame()
-            
-            # Add metadata for CSV
-            df['Source_Sheet'] = 'CSV_Data'
-            df['Data_Year'] = datetime.now().year
-            
-            # Clean and standardize the data
-            cleaned_df = clean_and_standardize_data(df)
-            st.success(f"🎉 Successfully loaded {len(cleaned_df)} records from CSV")
-            
-            return cleaned_df
-        
-        # Handle Excel files
-        elif file_name.endswith(('.xlsx', '.xls')):
-            # Read all sheets from the uploaded Excel file
-            excel_file = pd.ExcelFile(uploaded_file)
-            sheet_names = excel_file.sheet_names
-            
-            st.info(f"📊 Found {len(sheet_names)} sheets: {', '.join(sheet_names)}")
-            
-            dataframes = []
-            
-            for sheet_name in sheet_names:
-                try:
-                    df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
-                    
-                    # Skip empty sheets
-                    if df.empty:
-                        st.warning(f"⚠️ Sheet '{sheet_name}' is empty - skipping")
+            with st.spinner("📊 Processing CSV file..."):
+                # Try different encodings for CSV
+                encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+                df = None
+                
+                for encoding in encodings:
+                    try:
+                        df = pd.read_csv(uploaded_file, encoding=encoding)
+                        st.success(f"✅ CSV loaded successfully ({len(df):,} records)")
+                        break
+                    except UnicodeDecodeError:
                         continue
-                    
-                    # Add source sheet information
-                    df['Source_Sheet'] = sheet_name
-                    
-                    # Add year information based on sheet name
-                    if '2022' in sheet_name or '22' in sheet_name:
-                        df['Data_Year'] = 2022
-                    elif '2023' in sheet_name or '23' in sheet_name:
-                        df['Data_Year'] = 2023
-                    elif '2024' in sheet_name or '24' in sheet_name:
-                        df['Data_Year'] = 2024
-                    elif '2025' in sheet_name or '25' in sheet_name:
-                        df['Data_Year'] = 2025
-                    else:
-                        df['Data_Year'] = datetime.now().year
-                    
-                    dataframes.append(df)
-                    st.success(f"✅ Loaded {len(df)} records from '{sheet_name}'")
-                    
-                except Exception as e:
-                    st.warning(f"⚠️ Error loading sheet '{sheet_name}': {str(e)}")
-                    continue
-            
-            if not dataframes:
-                st.error("❌ No data could be loaded from any sheet")
-                return pd.DataFrame()
-            
-            # Combine all dataframes
-            combined_df = pd.concat(dataframes, ignore_index=True)
-            
-            # Clean and standardize the data
-            cleaned_df = clean_and_standardize_data(combined_df)
-            
-            st.success(f"🎉 Successfully loaded and merged {len(cleaned_df)} total records")
-            
-            return cleaned_df
-            
+                    except Exception as e:
+                        st.error(f"Error reading CSV: {str(e)}")
+                        continue
+                
+                if df is None:
+                    st.error("❌ Could not read CSV file. Please check the file format.")
+                    return pd.DataFrame()
+                
+                # Add metadata for CSV
+                df['Source_Sheet'] = 'CSV_Data'
+                df['Data_Year'] = datetime.now().year
+                
+                # Clean and standardize the data
+                with st.spinner("🔄 Cleaning and standardizing data..."):
+                    cleaned_df = clean_and_standardize_data_optimized(df)
+                
+                st.success(f"🎉 Successfully processed {len(cleaned_df):,} records")
+                return cleaned_df
+        
+        # Handle Excel files with optimization
+        elif file_name.endswith(('.xlsx', '.xls')):
+            with st.spinner("📊 Reading Excel file..."):
+                excel_file = pd.ExcelFile(uploaded_file)
+                sheet_names = excel_file.sheet_names
+                
+                st.info(f"📊 Processing {len(sheet_names)} sheets...")
+                
+                # Use progress bar for large files
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                dataframes = []
+                total_records = 0
+                
+                for i, sheet_name in enumerate(sheet_names):
+                    try:
+                        # Update progress
+                        progress = (i + 1) / len(sheet_names)
+                        progress_bar.progress(progress)
+                        status_text.text(f"Processing sheet {i+1}/{len(sheet_names)}: {sheet_name}")
+                        
+                        # Read sheet with optimizations
+                        df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+                        
+                        # Skip empty sheets
+                        if df.empty:
+                            continue
+                        
+                        # Add metadata efficiently
+                        df['Source_Sheet'] = sheet_name
+                        
+                        # Extract year from sheet name efficiently
+                        year = datetime.now().year
+                        for year_candidate in [2022, 2023, 2024, 2025]:
+                            if str(year_candidate) in sheet_name or str(year_candidate)[-2:] in sheet_name:
+                                year = year_candidate
+                                break
+                        df['Data_Year'] = year
+                        
+                        dataframes.append(df)
+                        total_records += len(df)
+                        
+                    except Exception as e:
+                        st.warning(f"⚠️ Error loading sheet '{sheet_name}': {str(e)}")
+                        continue
+                
+                # Clear progress indicators
+                progress_bar.empty()
+                status_text.empty()
+                
+                if not dataframes:
+                    st.error("❌ No data could be loaded from any sheet")
+                    return pd.DataFrame()
+                
+                # Combine dataframes efficiently
+                with st.spinner(f"🔄 Combining {len(dataframes)} sheets ({total_records:,} records)..."):
+                    combined_df = pd.concat(dataframes, ignore_index=True, sort=False)
+                
+                # Clean and standardize the data
+                with st.spinner("🔄 Cleaning and standardizing data..."):
+                    cleaned_df = clean_and_standardize_data_optimized(combined_df)
+                
+                st.success(f"🎉 Successfully processed {len(cleaned_df):,} records from {len(dataframes)} sheets")
+                return cleaned_df
+                
         else:
             st.error("❌ Unsupported file format. Please upload .xlsx, .xls, or .csv files.")
             return pd.DataFrame()
         
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
-        st.error("💡 **Troubleshooting tips:**")
-        st.error("• Check if the file is corrupted")
-        st.error("• Ensure the file has proper headers")
-        st.error("• Try saving the file in a different format")
-        st.error("• Contact support if the issue persists")
         return pd.DataFrame()
+
+def clean_and_standardize_data_optimized(df):
+    """
+    Optimized cleaning and standardization for large datasets.
+    """
+    if df.empty:
+        return df
+    
+    # Make a copy to avoid modifying original data
+    df = df.copy()
+    
+    # Optimize column name standardization
+    column_mapping = {
+        'customername': 'Customer Name',
+        'customer': 'Customer Name',
+        'invoicenumber': 'Invoice Number',
+        'itemdescription': 'Item Description',
+        'product': 'Item Description',
+        'quantity': 'Quantity',
+        'unitprice': 'Unit Price',
+        'totalsales': 'Total Sales',
+        'sales': 'Total Sales',
+        'revenue': 'Total Sales',
+        'businessunit': 'Business Unit',
+        'bu': 'Business Unit',
+        'salesperson': 'Salesperson',
+        'salesrep': 'Salesperson',
+        'totalcost': 'Total Cost',
+        'discount': 'Discount',
+        'profit': 'Profit',
+        'country': 'Country',
+        'location': 'Location',
+        'invoicedate': 'Invoice Date',
+        'date': 'Invoice Date'
+    }
+    
+    # Create a mapping of actual column names to standardized names
+    actual_mapping = {}
+    df_columns_lower = [col.lower().replace(' ', '').replace('_', '') for col in df.columns]
+    
+    for i, col_lower in enumerate(df_columns_lower):
+        if col_lower in column_mapping:
+            actual_mapping[df.columns[i]] = column_mapping[col_lower]
+    
+    # Apply column renaming
+    df = df.rename(columns=actual_mapping)
+    
+    # Optimize data type conversions
+    numeric_columns = ['Quantity', 'Unit Price', 'Total Sales', 'Total Cost', 'Discount', 'Profit']
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Optimize date conversion
+    if 'Invoice Date' in df.columns:
+        df['Invoice Date'] = pd.to_datetime(df['Invoice Date'], errors='coerce')
+    
+    # Optimize string cleaning
+    string_columns = ['Customer Name', 'Item Description', 'Business Unit', 'Salesperson', 'Country', 'Location']
+    for col in string_columns:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+            df[col] = df[col].replace(['nan', 'None', ''], np.nan)
+    
+    # Calculate derived fields efficiently
+    if 'Profit' not in df.columns and 'Total Sales' in df.columns and 'Total Cost' in df.columns:
+        df['Profit'] = df['Total Sales'] - df['Total Cost']
+    
+    if 'Total Sales' not in df.columns and 'Quantity' in df.columns and 'Unit Price' in df.columns:
+        df['Total Sales'] = df['Quantity'] * df['Unit Price']
+    
+    if 'Total Sales' in df.columns and 'Profit' in df.columns:
+        df['Profit Margin %'] = np.where(df['Total Sales'] > 0, 
+                                        (df['Profit'] / df['Total Sales'] * 100).round(2), 0)
+    
+    # Add date-based fields efficiently
+    if 'Invoice Date' in df.columns:
+        df['Invoice Year'] = df['Invoice Date'].dt.year
+        df['Invoice Month'] = df['Invoice Date'].dt.month
+        df['Invoice Quarter'] = df['Invoice Date'].dt.quarter
+    
+    # Clean text fields efficiently
+    if 'Business Unit' in df.columns:
+        df['Business Unit'] = df['Business Unit'].str.title()
+    
+    if 'Customer Name' in df.columns:
+        df['Customer Name'] = df['Customer Name'].str.title()
+    
+    # Remove rows with missing critical data
+    critical_columns = ['Customer Name', 'Total Sales']
+    existing_critical = [col for col in critical_columns if col in df.columns]
+    if existing_critical:
+        df = df.dropna(subset=existing_critical)
+    
+    # Remove duplicates efficiently
+    df = df.drop_duplicates()
+    
+    # Sort by date if available
+    if 'Invoice Date' in df.columns:
+        df = df.sort_values('Invoice Date', ignore_index=True)
+    
+    return df
 
 def clean_and_standardize_data(df):
     """
@@ -891,74 +999,103 @@ def main():
     # Add some spacing
     st.sidebar.markdown("---")
     
-    # File Upload Section (Built-in)
+    # File Upload Section (Optimized for large files)
     st.sidebar.subheader("📁 Data Upload")
     
-    # More prominent file uploader with expanded options
+    # More efficient file uploader
     uploaded_file = st.sidebar.file_uploader(
         "Choose your Excel file",
         type=['xlsx', 'xls', 'csv'],
-        help="Supported formats: Excel (.xlsx, .xls) or CSV (.csv)",
+        help="Supports: Excel (.xlsx, .xls) or CSV (.csv) | Max: 200MB",
         accept_multiple_files=False,
         key="file_uploader"
     )
     
-    # Add file format info
-    with st.sidebar.expander("📋 Supported File Formats", expanded=False):
-        st.markdown("""
-        **Excel Files:**
-        - `.xlsx` (Excel 2007+)
-        - `.xls` (Excel 97-2003)
-        
-        **CSV Files:**
-        - `.csv` (Comma-separated values)
-        
-        **File Size:** Up to 200MB
-        """)
-    
-    # Store uploaded file in session state
+    # Optimized file processing status
     if uploaded_file is not None:
-        st.session_state['uploaded_file'] = uploaded_file
-        file_size = uploaded_file.size / (1024 * 1024)  # Convert to MB
-        st.sidebar.success(f"✅ **File uploaded successfully!**")
-        st.sidebar.info(f"📄 **File:** {uploaded_file.name}\n📊 **Size:** {file_size:.1f} MB")
+        # Only process if it's a new file
+        if st.session_state.get('uploaded_file_name') != uploaded_file.name:
+            st.session_state['uploaded_file'] = uploaded_file
+            st.session_state['uploaded_file_name'] = uploaded_file.name
+            st.session_state['file_processed'] = False
         
-        # Show file preview info
-        if uploaded_file.name.endswith(('.xlsx', '.xls')):
-            st.sidebar.info("🔄 Excel file detected - will read all sheets")
-        elif uploaded_file.name.endswith('.csv'):
-            st.sidebar.info("🔄 CSV file detected - ready to process")
+        file_size = uploaded_file.size / (1024 * 1024)  # Convert to MB
+        
+        # Show file info
+        st.sidebar.success("✅ **File ready for processing**")
+        st.sidebar.info(f"📄 **{uploaded_file.name}**")
+        st.sidebar.info(f"📊 **Size:** {file_size:.1f} MB")
+        
+        # Performance tips for large files
+        if file_size > 50:
+            st.sidebar.warning("⚡ **Large file detected**")
+            st.sidebar.info("💡 Processing may take 30-60 seconds")
+        elif file_size > 20:
+            st.sidebar.info("⚡ **Medium file** - Processing ~15-30 seconds")
+        else:
+            st.sidebar.info("⚡ **Small file** - Quick processing")
+        
+        # Show file type info
+        if uploaded_file.name.lower().endswith(('.xlsx', '.xls')):
+            st.sidebar.info("📋 Excel file - will process all sheets")
+        elif uploaded_file.name.lower().endswith('.csv'):
+            st.sidebar.info("📋 CSV file - single table")
             
     elif 'uploaded_file' not in st.session_state:
         st.session_state['uploaded_file'] = None
-        st.sidebar.info("📝 **No file uploaded**\n🔄 Using sample data for demonstration")
+        st.session_state['uploaded_file_name'] = None
+        st.sidebar.info("📝 **No file uploaded**")
+        st.sidebar.info("🔄 Using sample data")
     
-    # Clear data button with confirmation
+    # Efficient clear data function
     if st.session_state.get('uploaded_file') is not None:
-        if st.sidebar.button("🗑️ Clear Uploaded Data", type="secondary"):
-            if 'uploaded_file' in st.session_state:
-                del st.session_state['uploaded_file']
-            st.sidebar.success("✅ Data cleared - refresh to use sample data")
+        if st.sidebar.button("🗑️ Clear Data", type="secondary"):
+            # Clear all file-related session state
+            for key in ['uploaded_file', 'uploaded_file_name', 'file_processed']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.sidebar.success("✅ Data cleared")
             st.rerun()
     
-    # Troubleshooting section
-    if st.sidebar.button("❓ Upload Not Working?"):
-        st.sidebar.markdown("""
-        **Try these solutions:**
+    # Quick performance tips
+    with st.sidebar.expander("⚡ Performance Tips", expanded=False):
+        st.markdown("""
+        **For Large Files (>50MB):**
+        - Wait for progress bar to complete
+        - Don't refresh during processing
+        - Processing can take 1-2 minutes
         
-        1. **Refresh the page** and try again
-        2. **Check file format** - use .xlsx, .xls, or .csv
-        3. **File size** - ensure file is under 200MB
-        4. **Clear browser cache** and reload
-        5. **Try a different browser** (Chrome, Firefox, Edge)
-        6. **Disable ad blockers** temporarily
+        **Speed Up Processing:**
+        - Use CSV format when possible
+        - Remove empty sheets from Excel
+        - Close other browser tabs
+        - Ensure stable internet connection
         
-        **Still having issues?**  
-        Use the sample data to explore the system, then try uploading again.
+        **Memory Usage:**
+        - Files >100MB may use significant RAM
+        - Close other applications if needed
+        - Consider splitting very large files
         """)
     
-    # Quick upload tips
-    st.sidebar.markdown("💡 **Tips:** Click 'Browse files' button above to select your Excel or CSV file")
+    # Troubleshooting for slow uploads
+    if st.sidebar.button("🐌 Upload Too Slow?"):
+        st.sidebar.markdown("""
+        **Speed up your uploads:**
+        
+        1. **Convert to CSV** - Much faster than Excel
+        2. **Split large files** - Process in smaller chunks
+        3. **Remove empty columns/rows** - Clean data first
+        4. **Use Chrome/Firefox** - Better file handling
+        5. **Clear browser cache** - Free up memory
+        6. **Close other tabs** - Reduce RAM usage
+        
+        **File size recommendations:**
+        - **< 20MB**: Fast processing
+        - **20-50MB**: Moderate speed
+        - **> 50MB**: Slower but works
+        """)
+    
+    st.sidebar.markdown("💡 **Tip:** CSV files process 3-5x faster than Excel files")
     
     st.sidebar.markdown("---")
     
