@@ -11,6 +11,7 @@ def create_sales_dashboard(df):
     Create comprehensive sales dashboard with key metrics and visualizations
     """
     st.header("📊 Sales Dashboard")
+    st.markdown("*All amounts in Saudi Riyal (SAR)*")
     
     if df.empty:
         st.error("No data available for dashboard")
@@ -68,21 +69,21 @@ def create_key_metrics(df):
     with col1:
         st.metric(
             label="Total Revenue",
-            value=f"${total_revenue:,.0f}",
-            delta=f"{total_revenue/1000000:.1f}M"
+            value=f"{total_revenue:,.0f} SAR",
+            delta=f"{total_revenue/1000000:.1f}M SAR"
         )
     
     with col2:
         st.metric(
             label="Total Profit", 
-            value=f"${total_profit:,.0f}",
+            value=f"{total_profit:,.0f} SAR",
             delta=f"{((total_profit/total_revenue)*100):.1f}% margin" if total_revenue > 0 else "0%"
         )
     
     with col3:
         st.metric(
             label="Avg Order Value",
-            value=f"${avg_order_value:,.0f}",
+            value=f"{avg_order_value:,.0f} SAR",
             delta=f"Per order"
         )
     
@@ -124,7 +125,7 @@ def create_monthly_sales_trend(df):
         
         fig.update_layout(
             xaxis_title="Month",
-            yaxis_title="Revenue ($)",
+            yaxis_title="Revenue (SAR)",
             showlegend=False,
             height=400
         )
@@ -165,7 +166,7 @@ def create_bu_performance_chart(df):
         )
         
         fig.update_layout(
-            xaxis_title="Revenue ($)",
+            xaxis_title="Revenue (SAR)",
             yaxis_title="Business Unit",
             height=400
         )
@@ -196,7 +197,7 @@ def create_top_customers_chart(df):
         )
         
         fig.update_layout(
-            xaxis_title="Revenue ($)",
+            xaxis_title="Revenue (SAR)",
             yaxis_title="Customer",
             height=400
         )
@@ -233,7 +234,7 @@ def create_sales_by_salesperson(df):
         
         fig.update_layout(
             xaxis_title="Salesperson",
-            yaxis_title="Revenue ($)",
+            yaxis_title="Revenue (SAR)",
             height=400,
             xaxis_tickangle=-45
         )
@@ -319,7 +320,7 @@ def create_geographic_analysis(df):
                 color='Local'
             )
             
-            fig.update_layout(height=300)
+            fig.update_layout(height=300, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -336,7 +337,7 @@ def create_geographic_analysis(df):
                 color_continuous_scale='blues'
             )
             
-            fig.update_layout(height=300, xaxis_tickangle=-45)
+            fig.update_layout(height=300, xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
             
     except Exception as e:
