@@ -10,6 +10,7 @@ def create_performance_analysis(df):
     Create comprehensive salesperson performance analysis
     """
     st.header("🏆 Salesperson Performance Analysis")
+    st.markdown("*All amounts in Saudi Riyal (SAR)*")
     
     if df.empty:
         st.error("No data available for performance analysis")
@@ -69,7 +70,7 @@ def create_performance_overview(df):
             st.metric(
                 label="Top Performer (Revenue)",
                 value=top_performer['Salesperson'],
-                delta=f"${top_performer['Total_Revenue']:,.0f}"
+                delta=f"{top_performer['Total_Revenue']:,.0f} SAR"
             )
         
         with col2:
@@ -109,8 +110,8 @@ def create_performance_overview(df):
             'Avg_Deal_Size', 'Profit_Margin', 'Unique_Customers'
         ]].copy()
         
-        display_df['Total_Revenue'] = display_df['Total_Revenue'].apply(lambda x: f"${x:,.0f}")
-        display_df['Avg_Deal_Size'] = display_df['Avg_Deal_Size'].apply(lambda x: f"${x:,.0f}")
+        display_df['Total_Revenue'] = display_df['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
+        display_df['Avg_Deal_Size'] = display_df['Avg_Deal_Size'].apply(lambda x: f"{x:,.0f} SAR")
         display_df['Profit_Margin'] = display_df['Profit_Margin'].apply(lambda x: f"{x:.1f}%")
         
         st.dataframe(display_df, use_container_width=True)
@@ -137,14 +138,14 @@ def create_individual_performance(df):
         
         with col1:
             total_revenue = salesperson_data['Total Line Amount'].sum()
-            st.metric("Total Revenue", f"${total_revenue:,.0f}")
+            st.metric("Total Revenue", f"{total_revenue:,.0f} SAR")
             
             deal_count = salesperson_data['Invoice No.'].nunique()
             st.metric("Deals Closed", f"{deal_count}")
         
         with col2:
             avg_deal_size = salesperson_data['Total Line Amount'].mean()
-            st.metric("Average Deal Size", f"${avg_deal_size:,.0f}")
+            st.metric("Average Deal Size", f"{avg_deal_size:,.0f} SAR")
             
             customers = salesperson_data['Cust Name'].nunique()
             st.metric("Unique Customers", f"{customers}")
@@ -173,7 +174,7 @@ def create_individual_performance(df):
                 title=f'{selected_salesperson} - Monthly Performance',
                 markers=True
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -188,7 +189,7 @@ def create_individual_performance(df):
                 orientation='h',
                 title=f'{selected_salesperson} - Top 5 Customers'
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, xaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         # Product performance
@@ -214,7 +215,7 @@ def create_individual_performance(df):
             title=f'{selected_salesperson} - Deal Size Distribution',
             nbins=20
         )
-        fig.update_layout(height=400)
+        fig.update_layout(height=400, xaxis_title="Deal Size (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
@@ -261,7 +262,7 @@ def create_comparative_analysis(df):
                 color='Total Line Amount',
                 color_continuous_scale='viridis'
             )
-            fig.update_layout(height=400, xaxis_tickangle=-45)
+            fig.update_layout(height=400, xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -345,7 +346,7 @@ def create_comparative_analysis(df):
             title='Monthly Revenue Trends',
             markers=True
         )
-        fig.update_layout(height=400)
+        fig.update_layout(height=400, yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
@@ -383,7 +384,7 @@ def create_performance_trends(df):
                 title='Team Revenue Trend',
                 markers=True
             )
-            fig.update_layout(height=400)
+            fig.update_layout(height=400, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -527,8 +528,8 @@ def create_target_analysis(df):
         
         # Format for display
         display_metrics = salesperson_metrics.copy()
-        display_metrics['Actual_Revenue'] = display_metrics['Actual_Revenue'].apply(lambda x: f"${x:,.0f}")
-        display_metrics['Target_Revenue'] = display_metrics['Target_Revenue'].apply(lambda x: f"${x:,.0f}")
+        display_metrics['Actual_Revenue'] = display_metrics['Actual_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
+        display_metrics['Target_Revenue'] = display_metrics['Target_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
         display_metrics['Revenue_Achievement'] = display_metrics['Revenue_Achievement'].apply(lambda x: f"{x:.1f}%")
         display_metrics['Deal_Achievement'] = display_metrics['Deal_Achievement'].apply(lambda x: f"{x:.1f}%")
         
