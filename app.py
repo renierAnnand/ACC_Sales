@@ -4,8 +4,15 @@ from datetime import datetime
 import sys
 import os
 
+# Add the current directory to Python path to ensure modules can be found
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 # Add the modules directory to the Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
+modules_dir = os.path.join(current_dir, 'modules')
+if modules_dir not in sys.path:
+    sys.path.insert(0, modules_dir)
 
 # Page configuration
 st.set_page_config(
@@ -54,15 +61,55 @@ st.markdown("""
     .stSelectbox > div > div > div {
         background-color: white;
     }
+    
+    .error-container {
+        background-color: #ffebee;
+        border: 1px solid #f44336;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    
+    .success-container {
+        background-color: #e8f5e8;
+        border: 1px solid #4caf50;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+def check_module_availability():
+    """Check which modules are available and return status"""
+    module_status = {}
+    
+    modules_to_check = [
+        'data_loader',
+        'sales_dashboard', 
+        'customer_segmentation',
+        'sales_forecasting',
+        'salesperson_performance',
+        'discount_analysis',
+        'bu_benchmarking',
+        'product_insights'
+    ]
+    
+    for module_name in modules_to_check:
+        try:
+            __import__(module_name)
+            module_status[module_name] = True
+        except ImportError:
+            module_status[module_name] = False
+    
+    return module_status
 
 def load_sample_data():
     """Load sample data for the home page overview"""
     try:
-        from modules.data_loader import load_and_merge_data, get_data_summary
-        df = load_and_merge_data()
-        summary = get_data_summary(df)
+        import data_loader
+        df = data_loader.load_and_merge_data()
+        summary = data_loader.get_data_summary(df)
         return df, summary
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
@@ -81,6 +128,9 @@ def show_home_page():
         </p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Check module availability
+    module_status = check_module_availability()
     
     # Load and display data overview
     with st.spinner("Loading data overview..."):
@@ -138,50 +188,94 @@ def show_home_page():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("""
+        # Sales Dashboard
+        status_icon = "✅" if module_status.get('sales_dashboard', False) else "⚠️"
+        st.markdown(f"""
         <div class="module-card">
-            <h4>📊 Sales Dashboard</h4>
+            <h4>{status_icon} 📊 Sales Dashboard</h4>
             <p>Real-time sales performance monitoring with KPIs, trends, and business unit analysis.</p>
             <strong>Features:</strong> Revenue tracking, profit analysis, geographic insights
         </div>
+        """, unsafe_allow_html=True)
         
+        # Customer Segmentation
+        status_icon = "✅" if module_status.get('customer_segmentation', False) else "⚠️"
+        st.markdown(f"""
         <div class="module-card">
-            <h4>👥 Customer Segmentation</h4>
+            <h4>{status_icon} 👥 Customer Segmentation</h4>
             <p>Advanced RFM analysis and ML-powered customer clustering for targeted strategies.</p>
             <strong>Features:</strong> RFM scoring, customer lifetime value, segment profiling
         </div>
+        """, unsafe_allow_html=True)
         
+        # Sales Forecasting
+        status_icon = "✅" if module_status.get('sales_forecasting', False) else "⚠️"
+        st.markdown(f"""
         <div class="module-card">
-            <h4>📈 Sales Forecasting</h4>
+            <h4>{status_icon} 📈 Sales Forecasting</h4>
             <p>AI-powered forecasting using Prophet and XGBoost for accurate sales predictions.</p>
             <strong>Features:</strong> Time series analysis, seasonal trends, demand planning
         </div>
+        """, unsafe_allow_html=True)
         
+        # Salesperson Performance
+        status_icon = "✅" if module_status.get('salesperson_performance', False) else "⚠️"
+        st.markdown(f"""
         <div class="module-card">
-            <h4>🏆 Salesperson Performance</h4>
+            <h4>{status_icon} 🏆 Salesperson Performance</h4>
             <p>Comprehensive performance analytics and KPI benchmarking for sales team optimization.</p>
             <strong>Features:</strong> Performance rankings, quota analysis, territory insights
         </div>
         """, unsafe_allow_html=True)
     
     with col2:
-        st.markdown("""
+        # Discount Analysis
+        status_icon = "✅" if module_status.get('discount_analysis', False) else "⚠️"
+        st.markdown(f"""
         <div class="module-card">
-            <h4>💰 Discount Analysis</h4>
+            <h4>{status_icon} 💰 Discount Analysis</h4>
             <p>Deep dive into discount strategies and their impact on profitability and customer behavior.</p>
             <strong>Features:</strong> Margin analysis, discount effectiveness, pricing optimization
         </div>
+        """, unsafe_allow_html=True)
         
+        # BU Benchmarking
+        status_icon = "✅" if module_status.get('bu_benchmarking', False) else "⚠️"
+        st.markdown(f"""
         <div class="module-card">
-            <h4>🏢 BU Benchmarking</h4>
+            <h4>{status_icon} 🏢 BU Benchmarking</h4>
             <p>Cross-business unit performance comparison with strategic recommendations.</p>
             <strong>Features:</strong> Comparative analytics, market share analysis, growth opportunities
         </div>
+        """, unsafe_allow_html=True)
         
+        # Product Insights
+        status_icon = "✅" if module_status.get('product_insights', False) else "⚠️"
+        st.markdown(f"""
         <div class="module-card">
-            <h4>📦 Product Insights</h4>
+            <h4>{status_icon} 📦 Product Insights</h4>
             <p>Product portfolio analysis with cross-sell opportunities and inventory optimization.</p>
             <strong>Features:</strong> Product lifecycle, basket analysis, recommendation engine
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Module status summary
+    working_modules = sum(1 for status in module_status.values() if status)
+    total_modules = len(module_status)
+    
+    if working_modules == total_modules:
+        st.markdown(f"""
+        <div class="success-container">
+            <h4>🎉 All Systems Operational!</h4>
+            <p>All {total_modules} modules are loaded and ready to use.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="error-container">
+            <h4>⚠️ Module Status</h4>
+            <p>{working_modules} of {total_modules} modules loaded successfully.</p>
+            <p>Some modules may need to be placed in the 'modules' directory.</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -203,26 +297,30 @@ def show_home_page():
         **6. Data Refresh**: The system automatically caches data for performance, but you can refresh by reloading the page
         """)
     
-    # System information
-    with st.expander("System Information", expanded=False):
-        col1, col2 = st.columns(2)
+    # Troubleshooting section
+    with st.expander("🔧 Troubleshooting", expanded=False):
+        st.markdown("""
+        **Common Issues:**
         
-        with col1:
-            st.markdown("""
-            **📊 Data Sources:**
-            - ACC Sales 2022-2024 Excel Files
-            - Multiple sheets with comprehensive sales data
-            - Real-time data processing and validation
-            """)
+        **📁 Module Not Found Errors:**
+        - Ensure all `.py` files are in the `modules/` directory
+        - Make sure `modules/__init__.py` exists (can be empty)
+        - Check that file names match exactly (case-sensitive)
         
-        with col2:
-            st.markdown("""
-            **🔧 Technology Stack:**
-            - Streamlit for interactive web interface
-            - Pandas for data processing
-            - Plotly for interactive visualizations
-            - Scikit-learn & Prophet for ML models
-            """)
+        **📊 Data Loading Issues:**
+        - Verify `data/ACC Sales 22~24.xlsx` exists
+        - Check Excel file has the expected sheet names
+        - Ensure data has required columns (Customer Name, Total Sales, etc.)
+        
+        **📈 Library Missing Errors:**
+        - Install missing packages: `pip install -r requirements.txt`
+        - For advanced forecasting: `pip install prophet xgboost`
+        
+        **🔄 Performance Issues:**
+        - Clear browser cache and reload
+        - Restart Streamlit server
+        - Check available system memory
+        """)
 
 def main():
     """Main application function"""
@@ -256,9 +354,21 @@ def main():
     
     # System status
     st.sidebar.subheader("⚡ System Status")
+    
+    # Check module status
+    module_status = check_module_availability()
+    working_modules = sum(1 for status in module_status.values() if status)
+    total_modules = len(module_status)
+    
+    if working_modules == total_modules:
+        st.sidebar.success("✅ All modules loaded")
+    else:
+        st.sidebar.warning(f"⚠️ {working_modules}/{total_modules} modules loaded")
+    
+    # Data status
     try:
-        from modules.data_loader import load_and_merge_data
-        df = load_and_merge_data()
+        import data_loader
+        df = data_loader.load_and_merge_data()
         if not df.empty:
             st.sidebar.success("✅ Data loaded successfully")
             st.sidebar.info(f"📊 {len(df):,} records available")
@@ -284,64 +394,73 @@ def main():
             show_home_page()
         
         elif module_key == "sales_dashboard":
-            from modules.sales_dashboard import main as dashboard_main
-            dashboard_main()
+            try:
+                import sales_dashboard
+                sales_dashboard.main()
+            except ImportError:
+                st.error("📊 Sales Dashboard module not found")
+                st.info("Please ensure `sales_dashboard.py` is in the `modules/` directory")
         
         elif module_key == "customer_segmentation":
             try:
-                from modules.customer_segmentation import main as segmentation_main
-                segmentation_main()
+                import customer_segmentation
+                customer_segmentation.main()
             except ImportError:
-                st.error("Customer Segmentation module not yet implemented")
-                st.info("This module is under development. Please select another module.")
+                st.error("👥 Customer Segmentation module not found")
+                st.info("Please ensure `customer_segmentation.py` is in the `modules/` directory")
         
         elif module_key == "sales_forecasting":
             try:
-                from modules.sales_forecasting import main as forecasting_main
-                forecasting_main()
+                import sales_forecasting
+                sales_forecasting.main()
             except ImportError:
-                st.error("Sales Forecasting module not yet implemented")
-                st.info("This module is under development. Please select another module.")
+                st.error("📈 Sales Forecasting module not found")
+                st.info("Please ensure `sales_forecasting.py` is in the `modules/` directory")
         
         elif module_key == "salesperson_performance":
             try:
-                from modules.salesperson_performance import main as performance_main
-                performance_main()
+                import salesperson_performance
+                salesperson_performance.main()
             except ImportError:
-                st.error("Salesperson Performance module not yet implemented")
-                st.info("This module is under development. Please select another module.")
+                st.error("🏆 Salesperson Performance module not found")
+                st.info("This module is under development. Please ensure `salesperson_performance.py` is in the `modules/` directory")
         
         elif module_key == "discount_analysis":
             try:
-                from modules.discount_analysis import main as discount_main
-                discount_main()
+                import discount_analysis
+                discount_analysis.main()
             except ImportError:
-                st.error("Discount Analysis module not yet implemented")
-                st.info("This module is under development. Please select another module.")
+                st.error("💰 Discount Analysis module not found")
+                st.info("This module is under development. Please ensure `discount_analysis.py` is in the `modules/` directory")
         
         elif module_key == "bu_benchmarking":
             try:
-                from modules.bu_benchmarking import main as benchmarking_main
-                benchmarking_main()
+                import bu_benchmarking
+                bu_benchmarking.main()
             except ImportError:
-                st.error("BU Benchmarking module not yet implemented")
-                st.info("This module is under development. Please select another module.")
+                st.error("🏢 BU Benchmarking module not found")
+                st.info("This module is under development. Please ensure `bu_benchmarking.py` is in the `modules/` directory")
         
         elif module_key == "product_insights":
             try:
-                from modules.product_insights import main as insights_main
-                insights_main()
+                import product_insights
+                product_insights.main()
             except ImportError:
-                st.error("Product Insights module not yet implemented")
-                st.info("This module is under development. Please select another module.")
+                st.error("📦 Product Insights module not found")
+                st.info("This module is under development. Please ensure `product_insights.py` is in the `modules/` directory")
     
     except Exception as e:
         st.error(f"Error loading module: {str(e)}")
         st.info("Please check the module implementation or contact the system administrator.")
         
         # Show error details in expandable section
-        with st.expander("Error Details"):
+        with st.expander("🔍 Error Details"):
             st.code(str(e))
+            st.markdown("**Possible Solutions:**")
+            st.markdown("- Check if the module file exists in the `modules/` directory")
+            st.markdown("- Verify the file name matches exactly (case-sensitive)")
+            st.markdown("- Ensure the module has a `main()` function")
+            st.markdown("- Check for any syntax errors in the module")
 
 if __name__ == "__main__":
     main()
