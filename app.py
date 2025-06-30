@@ -37,18 +37,6 @@ def load_and_process_data(uploaded_file):
         # Clean column names (remove extra spaces)
         df.columns = df.columns.str.strip()
         
-        # Ensure we have the expected columns from the sample file
-        expected_columns = [
-            'Invoice No.', 'Inv Line No.', 'Sales Order No.', 'Created On', 'PO',
-            'Invoice Date', 'Sales Source', 'Transaction Type', 'Class', 'Term Name',
-            'Salesperson Name', 'Item Number', 'Item Type', 'Brand', 'Item Category',
-            'Line Description', 'Inv Flag', 'Cust No.', 'Cust Name', 'Country',
-            'Local', 'Cust Class Code', 'Line Amount', 'Tax Amount', 'Total Line Amount',
-            'Applied Amount', 'Rev Account', 'Cost Flag', 'Item Cost', 'Total Cost',
-            'QTY', 'Work Order', 'Organization Code', 'Account', 'Act.', 'Act. Name',
-            'Site', 'Area', 'BU', 'BU Name'
-        ]
-        
         # Handle the duplicate BU columns (BU_1, BU Name_1) by keeping the first ones
         if 'BU_1' in df.columns:
             df = df.drop(['BU_1'], axis=1, errors='ignore')
@@ -119,6 +107,7 @@ def main():
     # Title and description
     st.title("🏢 ACC Sales Intelligence System")
     st.markdown("**Advanced Analytics Dashboard for Sales Performance & Business Intelligence**")
+    st.markdown("*All amounts displayed in Saudi Riyal (SAR)*")
     
     # Sidebar for navigation and file upload
     with st.sidebar:
@@ -161,7 +150,7 @@ def main():
                 # Data overview in sidebar
                 with st.expander("📈 Data Overview"):
                     st.write(f"**Date Range:** {df['Invoice Date'].min().strftime('%Y-%m-%d')} to {df['Invoice Date'].max().strftime('%Y-%m-%d')}")
-                    st.write(f"**Total Revenue:** ${df['Total Line Amount'].sum():,.2f}")
+                    st.write(f"**Total Revenue:** {df['Total Line Amount'].sum():,.2f} SAR")
                     st.write(f"**Business Units:** {df['BU Name'].nunique()}")
                     st.write(f"**Customers:** {df['Cust Name'].nunique()}")
                     st.write(f"**Salespeople:** {df['Salesperson Name'].nunique()}")
@@ -232,6 +221,8 @@ def main():
         - Category insights
         
         ---
+        
+        **Note:** All financial amounts are displayed in Saudi Riyal (SAR)
         
         **To get started:** Upload your Excel file using the sidebar file uploader.
         """)
