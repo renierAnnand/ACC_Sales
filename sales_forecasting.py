@@ -8,13 +8,29 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import forecasting libraries
+# Handle Prophet import with version compatibility
+PROPHET_AVAILABLE = False
 try:
+    # Try to fix numpy compatibility issues
+    import numpy as np
+    if not hasattr(np, 'float_'):
+        np.float_ = np.float64
+    if not hasattr(np, 'int_'):
+        np.int_ = np.int64
+    if not hasattr(np, 'bool_'):
+        np.bool_ = bool
+    
     from prophet import Prophet
     PROPHET_AVAILABLE = True
 except ImportError:
     PROPHET_AVAILABLE = False
+    st.warning("Prophet not available. Install with: pip install prophet")
+except Exception as e:
+    PROPHET_AVAILABLE = False
+    st.warning(f"Prophet compatibility issue: {str(e)}")
 
+# Handle XGBoost and sklearn imports
+XGB_AVAILABLE = False
 try:
     import xgboost as xgb
     from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -23,16 +39,20 @@ try:
 except ImportError:
     XGB_AVAILABLE = False
 
+# Always available imports
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import adfuller
-from statsmodels.tsa.arima.model import ARIMA
-import holidays
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+    ARIMA_AVAILABLE = True
+except ImportError:
+    ARIMA_AVAILABLE = False
 
 def load_data():
     """Load sales data from data_loader"""
     try:
-        from modules.data_loader import load_and_merge_data
-        return load_and_merge_data()
+        import data_loader
+        return data_loader.load_and_merge_data()
     except ImportError:
         st.error("Data loader not found. Please ensure data_loader.py is properly configured.")
         return pd.DataFrame()
@@ -56,6 +76,7 @@ def prepare_time_series_data(df, date_col='Invoice Date', value_col='Total Sales
     if frequency == 'D':  # Daily
         ts_data = df.groupby(df[date_col].dt.date)[value_col].sum().reset_index()
         ts_data.columns = ['ds', 'y']
+        ts_data['ds'] = pd.to_datetime(ts_data['ds'])
     elif frequency == 'W':  # Weekly
         ts_data = df.groupby(df[date_col].dt.to_period('W'))[value_col].sum().reset_index()
         ts_data['ds'] = ts_data[date_col].dt.start_time
@@ -77,9 +98,9 @@ def prepare_time_series_data(df, date_col='Invoice Date', value_col='Total Sales
     
     return ts_data
 
-def create_prophet_forecast(ts_data, periods=6, freq='M', include_holidays=True):
+def create_prophet_forecast(ts_data, periods=6, freq='M', include_holidays=False):
     """
-    Create forecast using Facebook Prophet
+    Create forecast using Facebook Prophet with error handling
     """
     if not PROPHET_AVAILABLE:
         return None, "Prophet not available. Please install: pip install prophet"
@@ -88,34 +109,45 @@ def create_prophet_forecast(ts_data, periods=6, freq='M', include_holidays=True)
         return None, "Insufficient data for Prophet forecasting (minimum 10 points required)"
     
     try:
-        # Initialize Prophet model
+        # Initialize Prophet model with simpler configuration
         model = Prophet(
             daily_seasonality=False,
             weekly_seasonality=freq == 'D',
             yearly_seasonality=True,
             changepoint_prior_scale=0.05,
             seasonality_prior_scale=10,
-            interval_width=0.8
+            interval_width=0.8,
+            uncertainty_samples=100  # Reduce for faster processing
         )
         
-        # Add country holidays if requested
+        # Add holidays only if requested and available
         if include_holidays:
-            model.add_country_holidays(country_name='SA')  # Saudi Arabia holidays
+            try:
+                model.add_country_holidays(country_name='SA')  # Saudi Arabia holidays
+            except Exception:
+                st.warning("Could not add Saudi Arabia holidays, continuing without them")
         
         # Fit the model
-        model.fit(ts_data)
+        with st.spinner("Training Prophet model..."):
+            model.fit(ts_data)
         
         # Create future dataframe
-        future = model.make_future_dataframe(periods=periods, freq=freq)
+        future = model.make_future_dataframe(periods=periods, freq='MS' if freq == 'M' else freq)
         
         # Make forecast
         forecast = model.predict(future)
         
         # Calculate accuracy metrics on historical data
         historical_forecast = forecast[:-periods]
-        mae = mean_absolute_error(ts_data['y'], historical_forecast['yhat'])
-        rmse = np.sqrt(mean_squared_error(ts_data['y'], historical_forecast['yhat']))
-        mape = np.mean(np.abs((ts_data['y'] - historical_forecast['yhat']) / ts_data['y'])) * 100
+        
+        # Ensure we have matching lengths for accuracy calculation
+        min_length = min(len(ts_data), len(historical_forecast))
+        actual_values = ts_data['y'][:min_length]
+        predicted_values = historical_forecast['yhat'][:min_length]
+        
+        mae = mean_absolute_error(actual_values, predicted_values)
+        rmse = np.sqrt(mean_squared_error(actual_values, predicted_values))
+        mape = np.mean(np.abs((actual_values - predicted_values) / actual_values)) * 100
         
         metrics = {
             'MAE': mae,
@@ -135,10 +167,10 @@ def create_prophet_forecast(ts_data, periods=6, freq='M', include_holidays=True)
 
 def create_xgboost_forecast(ts_data, periods=6, freq='M'):
     """
-    Create forecast using XGBoost
+    Create forecast using XGBoost with enhanced error handling
     """
     if not XGB_AVAILABLE:
-        return None, "XGBoost not available. Please install: pip install xgboost scikit-learn"
+        return None, "XGBoost not available. Install with: pip install xgboost scikit-learn"
     
     if ts_data.empty or len(ts_data) < 20:
         return None, "Insufficient data for XGBoost forecasting (minimum 20 points required)"
@@ -155,13 +187,13 @@ def create_xgboost_forecast(ts_data, periods=6, freq='M'):
         df['quarter'] = df['ds'].dt.quarter
         df['day_of_year'] = df['ds'].dt.dayofyear
         
-        # Create lag features
-        for lag in [1, 2, 3, 6, 12]:
+        # Create lag features (more conservative)
+        for lag in [1, 2, 3]:
             if len(df) > lag:
                 df[f'lag_{lag}'] = df['y'].shift(lag)
         
-        # Create rolling statistics
-        for window in [3, 6, 12]:
+        # Create rolling statistics (more conservative)
+        for window in [3, 6]:
             if len(df) > window:
                 df[f'rolling_mean_{window}'] = df['y'].rolling(window=window).mean()
                 df[f'rolling_std_{window}'] = df['y'].rolling(window=window).std()
@@ -181,25 +213,33 @@ def create_xgboost_forecast(ts_data, periods=6, freq='M'):
         y = df_clean['y']
         
         # Split data for training and validation
-        split_idx = int(len(X) * 0.8)
+        split_idx = max(1, int(len(X) * 0.8))
         X_train, X_val = X[:split_idx], X[split_idx:]
         y_train, y_val = y[:split_idx], y[split_idx:]
         
-        # Train XGBoost model
+        # Train XGBoost model with conservative parameters
         model = xgb.XGBRegressor(
-            n_estimators=100,
-            max_depth=6,
+            n_estimators=50,  # Reduced for speed
+            max_depth=4,      # Reduced to prevent overfitting
             learning_rate=0.1,
-            random_state=42
+            random_state=42,
+            verbosity=0       # Suppress output
         )
         
         model.fit(X_train, y_train)
         
-        # Validate model
-        val_pred = model.predict(X_val)
-        mae = mean_absolute_error(y_val, val_pred)
-        rmse = np.sqrt(mean_squared_error(y_val, val_pred))
-        mape = np.mean(np.abs((y_val - val_pred) / y_val)) * 100
+        # Validate model if we have validation data
+        if len(X_val) > 0:
+            val_pred = model.predict(X_val)
+            mae = mean_absolute_error(y_val, val_pred)
+            rmse = np.sqrt(mean_squared_error(y_val, val_pred))
+            mape = np.mean(np.abs((y_val - val_pred) / y_val)) * 100 if len(y_val) > 0 else 0
+        else:
+            # Use training data for metrics if no validation data
+            train_pred = model.predict(X_train)
+            mae = mean_absolute_error(y_train, train_pred)
+            rmse = np.sqrt(mean_squared_error(y_train, train_pred))
+            mape = np.mean(np.abs((y_train - train_pred) / y_train)) * 100
         
         # Create future predictions
         future_dates = pd.date_range(
@@ -220,19 +260,24 @@ def create_xgboost_forecast(ts_data, periods=6, freq='M'):
         future_df['trend'] = range(last_trend + 1, last_trend + 1 + periods)
         
         # For lag features, use last known values (simplified approach)
-        for lag in [1, 2, 3, 6, 12]:
-            if f'lag_{lag}' in feature_cols:
+        for lag in [1, 2, 3]:
+            col_name = f'lag_{lag}'
+            if col_name in feature_cols:
                 if lag <= len(df):
-                    future_df[f'lag_{lag}'] = df['y'].iloc[-lag:].mean()
+                    future_df[col_name] = df['y'].iloc[-min(lag, len(df)):].mean()
                 else:
-                    future_df[f'lag_{lag}'] = df['y'].mean()
+                    future_df[col_name] = df['y'].mean()
         
         # For rolling features, use recent values
-        for window in [3, 6, 12]:
-            if f'rolling_mean_{window}' in feature_cols:
-                future_df[f'rolling_mean_{window}'] = df['y'].tail(window).mean()
-            if f'rolling_std_{window}' in feature_cols:
-                future_df[f'rolling_std_{window}'] = df['y'].tail(window).std()
+        for window in [3, 6]:
+            mean_col = f'rolling_mean_{window}'
+            std_col = f'rolling_std_{window}'
+            if mean_col in feature_cols:
+                future_df[mean_col] = df['y'].tail(min(window, len(df))).mean()
+            if std_col in feature_cols:
+                future_df[std_col] = df['y'].tail(min(window, len(df))).std()
+                # Fill NaN with 0 for std
+                future_df[std_col] = future_df[std_col].fillna(0)
         
         # Make future predictions
         future_X = future_df[feature_cols]
@@ -265,10 +310,10 @@ def create_xgboost_forecast(ts_data, periods=6, freq='M'):
 
 def create_simple_forecast(ts_data, periods=6, method='moving_average', window=3):
     """
-    Create simple forecasts (Moving Average, Linear Trend)
+    Create simple forecasts (Moving Average, Linear Trend, Exponential Smoothing)
     """
     if ts_data.empty or len(ts_data) < window:
-        return None, f"Insufficient data for {method} forecasting"
+        return None, f"Insufficient data for {method} forecasting (need at least {window} points)"
     
     try:
         df = ts_data.copy()
@@ -318,18 +363,23 @@ def create_simple_forecast(ts_data, periods=6, method='moving_average', window=3
         # Calculate simple accuracy (using last few points)
         if len(df) >= 6:
             test_size = min(3, len(df) // 4)
-            test_actual = df['y'].tail(test_size)
+            test_actual = df['y'].tail(test_size).values
             
             if method == 'moving_average':
-                test_pred = [df['y'].iloc[i-window:i].mean() for i in range(len(df)-test_size, len(df))]
+                test_pred = []
+                for i in range(len(df)-test_size, len(df)):
+                    pred = df['y'].iloc[max(0, i-window):i].mean()
+                    test_pred.append(pred)
             elif method == 'linear_trend':
                 test_x = np.arange(len(df)-test_size, len(df))
                 test_pred = np.polyval(coeffs, test_x)
             else:
                 test_pred = [smoothed[-1]] * test_size
             
-            mae = mean_absolute_error(test_actual, test_pred)
-            rmse = np.sqrt(mean_squared_error(test_actual, test_pred))
+            # Calculate metrics
+            test_pred = np.array(test_pred)
+            mae = np.mean(np.abs(test_actual - test_pred))
+            rmse = np.sqrt(np.mean((test_actual - test_pred)**2))
             mape = np.mean(np.abs((test_actual - test_pred) / test_actual)) * 100
         else:
             mae = rmse = mape = 0
@@ -477,7 +527,7 @@ def create_seasonal_decomposition(ts_data, freq=12):
         df = df.set_index('ds')
         
         # Perform seasonal decomposition
-        decomposition = seasonal_decompose(df['y'], model='additive', period=freq)
+        decomposition = seasonal_decompose(df['y'], model='additive', period=freq, extrapolate_trend='freq')
         
         # Create subplots
         fig = make_subplots(
@@ -538,6 +588,17 @@ def main():
     st.title("📈 Sales Forecasting")
     st.markdown("---")
     
+    # Display library availability status
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        status = "✅ Available" if PROPHET_AVAILABLE else "❌ Not Available"
+        st.info(f"**Prophet**: {status}")
+    with col2:
+        status = "✅ Available" if XGB_AVAILABLE else "❌ Not Available"
+        st.info(f"**XGBoost**: {status}")
+    with col3:
+        st.info("**Simple Models**: ✅ Available")
+    
     # Load data
     with st.spinner("Loading sales data..."):
         df = load_data()
@@ -585,8 +646,8 @@ def main():
         format_func=lambda x: {'M': 'Monthly', 'Q': 'Quarterly', 'W': 'Weekly'}[x]
     )
     
-    # Model selection
-    available_models = ['Moving Average', 'Linear Trend']
+    # Model selection based on availability
+    available_models = ['Moving Average', 'Linear Trend', 'Exponential Smoothing']
     
     if PROPHET_AVAILABLE:
         available_models.append('Prophet')
@@ -597,7 +658,7 @@ def main():
     selected_models = st.sidebar.multiselect(
         "Select Models",
         available_models,
-        default=['Moving Average', 'Prophet'] if PROPHET_AVAILABLE else ['Moving Average']
+        default=['Moving Average', 'Linear Trend']
     )
     
     if not selected_models:
@@ -628,7 +689,8 @@ def main():
         st.metric("Data Points", len(ts_data))
     
     with col2:
-        st.metric("Date Range", f"{ts_data['ds'].min().strftime('%Y-%m')} to {ts_data['ds'].max().strftime('%Y-%m')}")
+        date_range = f"{ts_data['ds'].min().strftime('%Y-%m')} to {ts_data['ds'].max().strftime('%Y-%m')}"
+        st.metric("Date Range", date_range)
     
     with col3:
         st.metric("Total Sales", f"${ts_data['y'].sum():,.0f}")
@@ -672,6 +734,9 @@ def main():
                 
             elif model_name == 'Linear Trend':
                 result, error = create_simple_forecast(ts_data, periods=forecast_months, method='linear_trend')
+                
+            elif model_name == 'Exponential Smoothing':
+                result, error = create_simple_forecast(ts_data, periods=forecast_months, method='exponential_smoothing')
             
             if error:
                 st.error(f"{model_name}: {error}")
@@ -724,12 +789,12 @@ def main():
                 )
                 
                 # Download button
-                csv_data = export_forecast_to_csv(display_forecast)
+                csv_data = export_forecast_to_csv(display_forecast[cols_to_show])
                 if csv_data:
                     st.download_button(
                         label=f"📥 Download {model_name} Forecast CSV",
                         data=csv_data,
-                        file_name=f"{model_name.lower()}_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
+                        file_name=f"{model_name.lower().replace(' ', '_')}_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
                         mime="text/csv"
                     )
             
@@ -759,10 +824,12 @@ def main():
             st.plotly_chart(fig_comparison, use_container_width=True)
         
         # Best model recommendation
-        best_model = min(forecast_results.keys(), 
-                        key=lambda x: forecast_results[x]['metrics']['MAPE'])
-        
-        st.success(f"🎯 **Recommended Model**: {best_model} (Lowest MAPE: {forecast_results[best_model]['metrics']['MAPE']:.1f}%)")
+        valid_models = {k: v for k, v in forecast_results.items() if v and 'metrics' in v and v['metrics']['MAPE'] > 0}
+        if valid_models:
+            best_model = min(valid_models.keys(), 
+                            key=lambda x: valid_models[x]['metrics']['MAPE'])
+            
+            st.success(f"🎯 **Recommended Model**: {best_model} (Lowest MAPE: {valid_models[best_model]['metrics']['MAPE']:.1f}%)")
     
     # Insights and recommendations
     st.subheader("💡 Forecasting Insights")
@@ -776,12 +843,12 @@ def main():
     avg_forecast = total_forecast / len(forecast_results) if forecast_results else 0
     
     # Historical comparison
-    recent_avg = ts_data['y'].tail(forecast_months).mean()
+    recent_avg = ts_data['y'].tail(forecast_months).mean() if len(ts_data) >= forecast_months else ts_data['y'].mean()
     growth_rate = ((avg_forecast / forecast_months / recent_avg) - 1) * 100 if recent_avg > 0 else 0
     
     insights = [
         f"📊 **Forecast Summary**: Expected ${avg_forecast:,.0f} total sales over next {forecast_months} months",
-        f"📈 **Growth Trend**: {growth_rate:+.1f}% compared to recent {forecast_months}-month average",
+        f"📈 **Growth Trend**: {growth_rate:+.1f}% compared to recent average",
         f"🎯 **Monthly Target**: ${avg_forecast/forecast_months:,.0f} average monthly sales",
         f"⚡ **Data Quality**: {len(ts_data)} historical data points available for training"
     ]
