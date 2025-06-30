@@ -649,14 +649,13 @@ def show_home_page():
     </div>
     """, unsafe_allow_html=True)
     
-    # File upload instructions
+    # File upload instructions or data status
     if st.session_state.get('uploaded_file') is None:
         st.markdown("""
         <div style="background-color: #e3f2fd; padding: 1rem; border-radius: 0.5rem; margin-bottom: 2rem; border-left: 4px solid #2196f3;">
             <h4 style="color: #1976d2; margin-top: 0;">📁 Get Started</h4>
             <p style="margin-bottom: 0;">
-                <strong>Upload your Excel file</strong> using the sidebar to analyze your actual sales data, 
-                or continue with the sample data to explore the system capabilities.
+                <strong>Upload your Excel file</strong> using the sidebar to analyze your actual sales data and unlock all system capabilities.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -670,62 +669,62 @@ def show_home_page():
             </p>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Only show data overview when actual data is uploaded
+        st.subheader("📈 System Overview")
+        
+        # Load and display data overview
+        with st.spinner("Loading data overview..."):
+            df = load_data()
+            summary = get_data_summary(df)
+        
+        if summary:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.markdown("""
+                <div class="metric-container">
+                    <h3 style="color: #1f77b4; margin: 0;">📊</h3>
+                    <h2 style="margin: 0.5rem 0;">{:,}</h2>
+                    <p style="margin: 0; color: #666;">Total Records</p>
+                </div>
+                """.format(summary.get('total_records', 0)), unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("""
+                <div class="metric-container">
+                    <h3 style="color: #2ca02c; margin: 0;">💰</h3>
+                    <h2 style="margin: 0.5rem 0;">${:,.0f}</h2>
+                    <p style="margin: 0; color: #666;">Total Revenue</p>
+                </div>
+                """.format(summary.get('total_revenue', 0)), unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown("""
+                <div class="metric-container">
+                    <h3 style="color: #ff7f0e; margin: 0;">👥</h3>
+                    <h2 style="margin: 0.5rem 0;">{:,}</h2>
+                    <p style="margin: 0; color: #666;">Customers</p>
+                </div>
+                """.format(summary.get('unique_customers', 0)), unsafe_allow_html=True)
+            
+            with col4:
+                st.markdown("""
+                <div class="metric-container">
+                    <h3 style="color: #d62728; margin: 0;">🏢</h3>
+                    <h2 style="margin: 0.5rem 0;">{:,}</h2>
+                    <p style="margin: 0; color: #666;">Business Units</p>
+                </div>
+                """.format(summary.get('business_units', 0)), unsafe_allow_html=True)
+            
+            # Date range info
+            if summary.get('date_range'):
+                st.info(f"📅 Data Range: {summary['date_range']['start'].strftime('%B %Y')} - {summary['date_range']['end'].strftime('%B %Y')}")
     
     # Check module availability
     module_status = check_module_availability()
     
-    # Load and display data overview
-    with st.spinner("Loading data overview..."):
-        df = load_data()
-        summary = get_data_summary(df)
-    
-    if summary:
-        # Key metrics overview
-        st.subheader("📈 System Overview")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown("""
-            <div class="metric-container">
-                <h3 style="color: #1f77b4; margin: 0;">📊</h3>
-                <h2 style="margin: 0.5rem 0;">{:,}</h2>
-                <p style="margin: 0; color: #666;">Total Records</p>
-            </div>
-            """.format(summary.get('total_records', 0)), unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("""
-            <div class="metric-container">
-                <h3 style="color: #2ca02c; margin: 0;">💰</h3>
-                <h2 style="margin: 0.5rem 0;">${:,.0f}</h2>
-                <p style="margin: 0; color: #666;">Total Revenue</p>
-            </div>
-            """.format(summary.get('total_revenue', 0)), unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown("""
-            <div class="metric-container">
-                <h3 style="color: #ff7f0e; margin: 0;">👥</h3>
-                <h2 style="margin: 0.5rem 0;">{:,}</h2>
-                <p style="margin: 0; color: #666;">Customers</p>
-            </div>
-            """.format(summary.get('unique_customers', 0)), unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown("""
-            <div class="metric-container">
-                <h3 style="color: #d62728; margin: 0;">🏢</h3>
-                <h2 style="margin: 0.5rem 0;">{:,}</h2>
-                <p style="margin: 0; color: #666;">Business Units</p>
-            </div>
-            """.format(summary.get('business_units', 0)), unsafe_allow_html=True)
-        
-        # Date range info
-        if summary.get('date_range'):
-            st.info(f"📅 Data Range: {summary['date_range']['start'].strftime('%B %Y')} - {summary['date_range']['end'].strftime('%B %Y')}")
-    
-    # System modules overview
+    # System modules overview - Always show this section
     st.subheader("🎯 Available Modules")
     
     col1, col2 = st.columns(2)
@@ -802,18 +801,11 @@ def show_home_page():
         </div>
         """, unsafe_allow_html=True)
     
-    # Module status summary
+    # Module status summary - Only show if there are issues
     working_modules = sum(1 for status in module_status.values() if status)
     total_modules = len(module_status)
     
-    if working_modules == total_modules:
-        st.markdown(f"""
-        <div class="success-container">
-            <h4>🎉 All Systems Operational!</h4>
-            <p>All {total_modules} modules are loaded and ready to use.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
+    if working_modules != total_modules:
         st.markdown(f"""
         <div class="error-container">
             <h4>⚠️ Module Status</h4>
