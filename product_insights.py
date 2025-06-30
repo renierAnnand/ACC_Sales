@@ -1,11 +1,41 @@
 import streamlit as st
 import pandas as pd
 
+def load_data():
+    """Load data using the app's built-in data loading functions"""
+    # Import the main app functions
+    import sys
+    
+    # Get the main module (app.py) functions
+    if 'app' in sys.modules:
+        app_module = sys.modules['app']
+        if hasattr(app_module, 'load_data'):
+            return app_module.load_data()
+    
+    # Fallback: try to access data via session state mechanism
+    if st.session_state.get('uploaded_file') is not None:
+        try:
+            uploaded_file = st.session_state['uploaded_file']
+            df = pd.read_excel(uploaded_file)
+            return df
+        except:
+            pass
+    
+    # If all else fails, return empty dataframe
+    return pd.DataFrame()
+
 def main():
     """Placeholder for Product Insights module"""
     
     st.title("📦 Product Insights & Analytics")
     st.markdown("---")
+    
+    # Show data source information
+    if st.session_state.get('uploaded_file') is not None:
+        filename = st.session_state['uploaded_file'].name
+        st.success(f"📊 **Data Source**: {filename}")
+    else:
+        st.info("📝 **Data Source**: Sample data")
     
     st.info("🚧 **Module Under Development**")
     
@@ -33,8 +63,7 @@ def main():
     
     # Try to load some basic data for preview
     try:
-        import data_loader
-        df = data_loader.load_and_merge_data()
+        df = load_data()
         
         if not df.empty and 'Item Description' in df.columns:
             st.subheader("📋 Product Portfolio Overview")
@@ -46,18 +75,21 @@ def main():
                 st.metric("Total Products", f"{total_products:,}")
             
             with col2:
-                avg_product_revenue = df.groupby('Item Description')['Total Sales'].sum().mean()
-                st.metric("Avg Product Revenue", f"${avg_product_revenue:,.0f}")
+                if 'Total Sales' in df.columns:
+                    avg_product_revenue = df.groupby('Item Description')['Total Sales'].sum().mean()
+                    st.metric("Avg Product Revenue", f"${avg_product_revenue:,.0f}")
             
             with col3:
-                top_product_share = (df.groupby('Item Description')['Total Sales'].sum().max() / 
-                                   df['Total Sales'].sum() * 100)
-                st.metric("Top Product Share", f"{top_product_share:.1f}%")
+                if 'Total Sales' in df.columns:
+                    top_product_share = (df.groupby('Item Description')['Total Sales'].sum().max() / 
+                                       df['Total Sales'].sum() * 100)
+                    st.metric("Top Product Share", f"{top_product_share:.1f}%")
             
             # Show top products preview
-            st.subheader("🏆 Top Products Preview")
-            top_products = df.groupby('Item Description')['Total Sales'].sum().sort_values(ascending=False).head(10)
-            st.dataframe(top_products.to_frame('Revenue'))
+            if 'Total Sales' in df.columns:
+                st.subheader("🏆 Top Products Preview")
+                top_products = df.groupby('Item Description')['Total Sales'].sum().sort_values(ascending=False).head(10)
+                st.dataframe(top_products.to_frame('Revenue'))
             
     except Exception as e:
         st.warning("Sample data not available for preview")
