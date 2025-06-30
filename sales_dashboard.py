@@ -9,18 +9,35 @@ import warnings
 warnings.filterwarnings('ignore')
 
 def load_data():
-    """
-    Load and return the merged sales data from all sheets.
-    This function should be implemented in data_loader.py
-    """
-    try:
-        # Import from data_loader utility
-        from modules.data_loader import load_and_merge_data
-        return load_and_merge_data()
-    except ImportError:
-        # Fallback: Basic data loading if data_loader not available
-        st.error("Data loader not found. Please ensure data_loader.py is properly configured.")
-        return pd.DataFrame()
+    """Load data using the app's built-in data loading functions"""
+    import sys
+    
+    # Get the main module (app.py) functions
+    if 'app' in sys.modules:
+        app_module = sys.modules['app']
+        if hasattr(app_module, 'load_data'):
+            return app_module.load_data()
+    
+    # Fallback: try to access data via session state mechanism
+    if st.session_state.get('uploaded_file') is not None:
+        try:
+            uploaded_file = st.session_state['uploaded_file']
+            df = pd.read_excel(uploaded_file)
+            return df
+        except:
+            pass
+    
+    # If all else fails, return empty dataframe
+    st.error("Unable to load data. Please ensure the main app is running properly.")
+    return pd.DataFrame()
+
+def show_data_source():
+    """Show information about current data source"""
+    if st.session_state.get('uploaded_file') is not None:
+        filename = st.session_state['uploaded_file'].name
+        st.success(f"📊 **Data Source**: {filename}")
+    else:
+        st.info("📝 **Data Source**: Sample data")
 
 def create_kpi_cards(df, col1, col2, col3, col4):
     """Create KPI cards for key metrics"""
@@ -28,7 +45,7 @@ def create_kpi_cards(df, col1, col2, col3, col4):
         return
     
     # Calculate KPIs
-    total_revenue = df['Total Sales'].sum()
+    total_revenue = df['Total Sales'].sum() if 'Total Sales' in df.columns else 0
     total_cost = df['Total Cost'].sum() if 'Total Cost' in df.columns else 0
     total_profit = total_revenue - total_cost
     profit_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
@@ -49,35 +66,39 @@ def create_kpi_cards(df, col1, col2, col3, col4):
         )
     
     with col3:
-        avg_order_value = df['Total Sales'].mean()
+        avg_order_value = df['Total Sales'].mean() if 'Total Sales' in df.columns else 0
+        customer_count = df['Customer Name'].nunique() if 'Customer Name' in df.columns else 0
         st.metric(
             label="🛒 Avg Order Value",
             value=f"${avg_order_value:,.0f}",
-            delta=f"{df['Customer Name'].nunique()} customers"
+            delta=f"{customer_count} customers"
         )
     
     with col4:
         unique_products = df['Item Description'].nunique() if 'Item Description' in df.columns else 0
+        unique_bus = df['Business Unit'].nunique() if 'Business Unit' in df.columns else 0
         st.metric(
             label="📦 Products Sold",
             value=f"{unique_products:,}",
-            delta=f"{df['Business Unit'].nunique()} business units"
+            delta=f"{unique_bus} business units"
         )
 
 def create_revenue_trend_chart(df):
     """Create revenue trend over time"""
     if df.empty or 'Invoice Date' not in df.columns:
         st.warning("Invoice Date column not found for trend analysis")
-        return
+        return None
     
-    # Prepare data for trend analysis
-    df['Invoice Date'] = pd.to_datetime(df['Invoice Date'])
-    monthly_revenue = df.groupby(df['Invoice Date'].dt.to_period('M')).agg({
+    # Prepare data for trend analysis - fix timezone issue
+    df_copy = df.copy()
+    df_copy['Invoice Date'] = pd.to_datetime(df_copy['Invoice Date']).dt.tz_localize(None)
+    
+    monthly_revenue = df_copy.groupby(df_copy['Invoice Date'].dt.to_period('M')).agg({
         'Total Sales': 'sum',
-        'Total Cost': 'sum' if 'Total Cost' in df.columns else 'count'
+        'Total Cost': 'sum' if 'Total Cost' in df_copy.columns else 'count'
     }).reset_index()
     
-    if 'Total Cost' in df.columns:
+    if 'Total Cost' in df_copy.columns:
         monthly_revenue['Profit'] = monthly_revenue['Total Sales'] - monthly_revenue['Total Cost']
     
     monthly_revenue['Invoice Date'] = monthly_revenue['Invoice Date'].dt.to_timestamp()
@@ -98,7 +119,7 @@ def create_revenue_trend_chart(df):
     )
     
     # Profit line (if available)
-    if 'Total Cost' in df.columns:
+    if 'Total Cost' in df_copy.columns:
         fig.add_trace(
             go.Scatter(
                 x=monthly_revenue['Invoice Date'],
@@ -119,20 +140,20 @@ def create_revenue_trend_chart(df):
     )
     
     fig.update_yaxis(title_text="Revenue ($)", secondary_y=False)
-    if 'Total Cost' in df.columns:
+    if 'Total Cost' in df_copy.columns:
         fig.update_yaxis(title_text="Profit ($)", secondary_y=True)
     
     return fig
 
 def create_bu_performance_chart(df):
     """Create business unit performance chart"""
-    if df.empty:
-        return
+    if df.empty or 'Business Unit' not in df.columns:
+        return None
     
     bu_performance = df.groupby('Business Unit').agg({
         'Total Sales': 'sum',
         'Total Cost': 'sum' if 'Total Cost' in df.columns else 'count',
-        'Customer Name': 'nunique'
+        'Customer Name': 'nunique' if 'Customer Name' in df.columns else 'count'
     }).reset_index()
     
     if 'Total Cost' in df.columns:
@@ -194,18 +215,20 @@ def create_top_performers_charts(df):
         return None, None
     
     # Top 10 customers by revenue
-    top_customers = df.groupby('Customer Name')['Total Sales'].sum().sort_values(ascending=False).head(10)
-    
-    fig_customers = px.bar(
-        x=top_customers.values,
-        y=top_customers.index,
-        orientation='h',
-        title="🥇 Top 10 Customers by Revenue",
-        labels={'x': 'Revenue ($)', 'y': 'Customer'},
-        color=top_customers.values,
-        color_continuous_scale='Blues'
-    )
-    fig_customers.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
+    fig_customers = None
+    if 'Customer Name' in df.columns:
+        top_customers = df.groupby('Customer Name')['Total Sales'].sum().sort_values(ascending=False).head(10)
+        
+        fig_customers = px.bar(
+            x=top_customers.values,
+            y=top_customers.index,
+            orientation='h',
+            title="🥇 Top 10 Customers by Revenue",
+            labels={'x': 'Revenue ($)', 'y': 'Customer'},
+            color=top_customers.values,
+            color_continuous_scale='Blues'
+        )
+        fig_customers.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
     
     # Top 10 products by revenue (if available)
     fig_products = None
@@ -232,7 +255,7 @@ def create_geographic_analysis(df):
     
     geo_performance = df.groupby('Country').agg({
         'Total Sales': 'sum',
-        'Customer Name': 'nunique'
+        'Customer Name': 'nunique' if 'Customer Name' in df.columns else 'count'
     }).reset_index().sort_values('Total Sales', ascending=False)
     
     fig = px.bar(
@@ -256,31 +279,34 @@ def generate_insights(df):
     insights = []
     
     # Revenue insights
-    total_revenue = df['Total Sales'].sum()
+    total_revenue = df['Total Sales'].sum() if 'Total Sales' in df.columns else 0
     insights.append(f"💰 **Total Revenue**: ${total_revenue:,.0f} across {len(df):,} transactions")
     
     # Top customer insight
-    top_customer = df.groupby('Customer Name')['Total Sales'].sum().idxmax()
-    top_customer_revenue = df.groupby('Customer Name')['Total Sales'].sum().max()
-    customer_percentage = (top_customer_revenue / total_revenue) * 100
-    insights.append(f"🥇 **Top Customer**: {top_customer} contributed ${top_customer_revenue:,.0f} ({customer_percentage:.1f}% of total revenue)")
+    if 'Customer Name' in df.columns:
+        top_customer = df.groupby('Customer Name')['Total Sales'].sum().idxmax()
+        top_customer_revenue = df.groupby('Customer Name')['Total Sales'].sum().max()
+        customer_percentage = (top_customer_revenue / total_revenue) * 100 if total_revenue > 0 else 0
+        insights.append(f"🥇 **Top Customer**: {top_customer} contributed ${top_customer_revenue:,.0f} ({customer_percentage:.1f}% of total revenue)")
     
     # Business unit insights
-    top_bu = df.groupby('Business Unit')['Total Sales'].sum().idxmax()
-    bu_revenue = df.groupby('Business Unit')['Total Sales'].sum().max()
-    bu_percentage = (bu_revenue / total_revenue) * 100
-    insights.append(f"🏢 **Leading Business Unit**: {top_bu} generated ${bu_revenue:,.0f} ({bu_percentage:.1f}% of total revenue)")
+    if 'Business Unit' in df.columns:
+        top_bu = df.groupby('Business Unit')['Total Sales'].sum().idxmax()
+        bu_revenue = df.groupby('Business Unit')['Total Sales'].sum().max()
+        bu_percentage = (bu_revenue / total_revenue) * 100 if total_revenue > 0 else 0
+        insights.append(f"🏢 **Leading Business Unit**: {top_bu} generated ${bu_revenue:,.0f} ({bu_percentage:.1f}% of total revenue)")
     
     # Profit insight (if available)
     if 'Total Cost' in df.columns:
         total_cost = df['Total Cost'].sum()
         total_profit = total_revenue - total_cost
-        profit_margin = (total_profit / total_revenue) * 100
+        profit_margin = (total_profit / total_revenue) * 100 if total_revenue > 0 else 0
         insights.append(f"📈 **Profitability**: ${total_profit:,.0f} profit with {profit_margin:.1f}% margin")
     
     # Average order value
-    avg_order = df['Total Sales'].mean()
-    insights.append(f"🛒 **Average Order Value**: ${avg_order:,.0f}")
+    if 'Total Sales' in df.columns:
+        avg_order = df['Total Sales'].mean()
+        insights.append(f"🛒 **Average Order Value**: ${avg_order:,.0f}")
     
     # Product diversity (if available)
     if 'Item Description' in df.columns:
@@ -293,6 +319,9 @@ def main():
     """Main function for the sales dashboard"""
     st.title("📊 Sales Intelligence Dashboard")
     st.markdown("---")
+    
+    # Show data source information
+    show_data_source()
     
     # Load data
     with st.spinner("Loading sales data..."):
@@ -315,7 +344,7 @@ def main():
     
     # Year filter (if date column exists)
     if 'Invoice Date' in df.columns:
-        df['Invoice Date'] = pd.to_datetime(df['Invoice Date'])
+        df['Invoice Date'] = pd.to_datetime(df['Invoice Date']).dt.tz_localize(None)
         years = ['All'] + sorted(df['Invoice Date'].dt.year.unique().tolist(), reverse=True)
         selected_year = st.sidebar.selectbox("Year", years)
         
@@ -364,6 +393,8 @@ def main():
     with col1:
         if fig_customers:
             st.plotly_chart(fig_customers, use_container_width=True)
+        else:
+            st.info("Customer information not available")
     
     with col2:
         if fig_products:
@@ -390,13 +421,21 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             st.write("**Data Shape:**", df.shape)
-            st.write("**Date Range:**", 
-                    f"{df['Invoice Date'].min().strftime('%Y-%m-%d')} to {df['Invoice Date'].max().strftime('%Y-%m-%d')}" 
-                    if 'Invoice Date' in df.columns else "Date not available")
+            if 'Invoice Date' in df.columns:
+                st.write("**Date Range:**", 
+                        f"{df['Invoice Date'].min().strftime('%Y-%m-%d')} to {df['Invoice Date'].max().strftime('%Y-%m-%d')}")
+            else:
+                st.write("**Date Range:**", "Date not available")
         
         with col2:
-            st.write("**Business Units:**", df['Business Unit'].nunique() if 'Business Unit' in df.columns else "N/A")
-            st.write("**Unique Customers:**", df['Customer Name'].nunique())
+            if 'Business Unit' in df.columns:
+                st.write("**Business Units:**", df['Business Unit'].nunique())
+            else:
+                st.write("**Business Units:**", "N/A")
+            if 'Customer Name' in df.columns:
+                st.write("**Unique Customers:**", df['Customer Name'].nunique())
+            else:
+                st.write("**Unique Customers:**", "N/A")
 
 if __name__ == "__main__":
     main()
