@@ -4,16 +4,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime, timedelta
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-import warnings
-warnings.filterwarnings('ignore')
 
 def create_sales_forecast(df):
     """
     Create sales forecasting analysis with multiple models
     """
     st.header("📈 Sales Forecasting")
+    st.markdown("*All amounts in Saudi Riyal (SAR)*")
     
     if df.empty:
         st.error("No data available for forecasting")
@@ -91,7 +88,7 @@ def create_overall_forecast(df, forecast_period):
             fig.update_layout(
                 title='Sales Trend Forecast',
                 xaxis_title='Date',
-                yaxis_title='Revenue ($)',
+                yaxis_title='Revenue (SAR)',
                 height=400
             )
             
@@ -139,7 +136,7 @@ def create_overall_forecast(df, forecast_period):
             fig.update_layout(
                 title='Moving Average Forecast',
                 xaxis_title='Date',
-                yaxis_title='Revenue ($)',
+                yaxis_title='Revenue (SAR)',
                 height=400
             )
             
@@ -190,28 +187,29 @@ def get_forecast_periods(forecast_period):
 
 def create_trend_forecast(monthly_data, periods):
     """
-    Create linear trend forecast
+    Create simple trend forecast using linear regression
     """
     try:
         if len(monthly_data) < 3:
             return None
         
-        # Prepare data for linear regression
+        # Simple linear trend
         monthly_data['Period'] = range(len(monthly_data))
-        X = monthly_data[['Period']]
-        y = monthly_data['Revenue']
         
-        # Fit linear regression
-        model = LinearRegression()
-        model.fit(X, y)
+        # Calculate trend using numpy
+        x = monthly_data['Period'].values
+        y = monthly_data['Revenue'].values
+        
+        # Linear regression coefficients
+        coeffs = np.polyfit(x, y, 1)
+        slope, intercept = coeffs
         
         # Create future periods
         last_period = monthly_data['Period'].max()
-        future_periods = range(last_period + 1, last_period + periods + 1)
-        future_X = pd.DataFrame({'Period': future_periods})
+        future_periods = np.arange(last_period + 1, last_period + periods + 1)
         
         # Predict
-        predictions = model.predict(future_X)
+        predictions = slope * future_periods + intercept
         
         # Create forecast dataframe
         last_date = monthly_data['Date'].max()
@@ -282,10 +280,10 @@ def create_forecast_summary(monthly_data, trend_forecast, ma_forecast, forecast_
                 f'Moving Average Forecast ({forecast_period})'
             ],
             'Value': [
-                f"${avg_monthly_revenue:,.0f}",
-                f"${recent_3_months:,.0f}",
-                f"${trend_forecast['Forecast'].sum():,.0f}" if trend_forecast is not None else "N/A",
-                f"${ma_forecast['Forecast'].sum():,.0f}" if ma_forecast is not None else "N/A"
+                f"{avg_monthly_revenue:,.0f} SAR",
+                f"{recent_3_months:,.0f} SAR",
+                f"{trend_forecast['Forecast'].sum():,.0f} SAR" if trend_forecast is not None else "N/A",
+                f"{ma_forecast['Forecast'].sum():,.0f} SAR" if ma_forecast is not None else "N/A"
             ]
         }
         
@@ -301,7 +299,7 @@ def create_forecast_summary(monthly_data, trend_forecast, ma_forecast, forecast_
             st.metric(
                 label="Month-over-Month Growth",
                 value=f"{growth_rate:.1f}%",
-                delta=f"${last_month - prev_month:,.0f}"
+                delta=f"{last_month - prev_month:,.0f} SAR"
             )
         
     except Exception as e:
@@ -338,7 +336,8 @@ def create_seasonal_analysis(monthly_data):
         
         fig.update_layout(
             xaxis_tickangle=-45,
-            height=400
+            height=400,
+            yaxis_title="Revenue (SAR)"
         )
         
         st.plotly_chart(fig, use_container_width=True)
@@ -398,7 +397,7 @@ def create_bu_forecast(df, forecast_period):
         fig.update_layout(
             title=f'{selected_bu} Sales Forecast',
             xaxis_title='Date',
-            yaxis_title='Revenue ($)',
+            yaxis_title='Revenue (SAR)',
             height=500
         )
         
@@ -419,7 +418,7 @@ def create_bu_forecast(df, forecast_period):
             color_continuous_scale='blues'
         )
         
-        fig.update_layout(xaxis_tickangle=-45)
+        fig.update_layout(xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
@@ -481,7 +480,7 @@ def create_customer_forecast(df, forecast_period):
         fig.update_layout(
             title=f'{selected_customer} Sales Forecast',
             xaxis_title='Date',
-            yaxis_title='Revenue ($)',
+            yaxis_title='Revenue (SAR)',
             height=500
         )
         
@@ -555,7 +554,7 @@ def create_product_forecast(df, forecast_period):
         fig.update_layout(
             title=f'{selected_brand} Sales Forecast',
             xaxis_title='Date',
-            yaxis_title='Revenue ($)',
+            yaxis_title='Revenue (SAR)',
             height=500
         )
         
@@ -573,7 +572,7 @@ def create_product_forecast(df, forecast_period):
             color_continuous_scale='viridis'
         )
         
-        fig.update_layout(xaxis_tickangle=-45)
+        fig.update_layout(xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
         st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
