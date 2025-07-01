@@ -215,73 +215,258 @@ def get_available_models():
     return models
 
 def create_forecasting_analysis(df, forecast_period, model_selection):
-    """Main forecasting analysis with robust error handling"""
+    """Main forecasting analysis with extensive debugging"""
     st.subheader("🎯 Forecasting Analysis")
     
     try:
-        # Prepare data
-        monthly_data = prepare_monthly_data(df)
+        st.write("**Step 1: Data Preparation**")
+        
+        # Prepare data with extensive debugging
+        monthly_data = prepare_monthly_data_debug(df)
         
         if monthly_data.empty:
             st.error("❌ Could not prepare data for forecasting")
             return
         
-        if len(monthly_data) < 6:
-            st.error(f"❌ Need at least 6 months of data. You have {len(monthly_data)} months.")
+        if len(monthly_data) < 3:
+            st.error(f"❌ Need at least 3 months of data. You have {len(monthly_data)} months.")
             return
         
         st.success(f"✅ Data prepared: {len(monthly_data)} months of sales data")
         
+        # Show sample of prepared data
+        st.write("**Sample of Prepared Data:**")
+        st.dataframe(monthly_data.head())
+        
         # Show data quality
         show_data_quality(monthly_data)
         
-        # Generate forecasts
+        st.write("**Step 2: Model Testing**")
+        
+        # Generate forecasts with extensive debugging
         periods = get_forecast_periods(forecast_period)
         forecasts = {}
         performance = {}
         
-        progress_bar = st.progress(0)
-        
-        for i, model_name in enumerate(model_selection):
-            with st.spinner(f"Training {model_name}..."):
-                try:
-                    forecast_result = generate_forecast_safe(monthly_data, model_name, periods)
-                    
-                    if forecast_result is not None and len(forecast_result) > 0:
-                        forecasts[model_name] = forecast_result
-                        
-                        # Calculate performance
-                        perf = calculate_performance(monthly_data, model_name, periods)
-                        performance[model_name] = perf
-                        
-                        st.success(f"✅ {model_name} completed")
-                    else:
-                        st.warning(f"⚠️ {model_name} failed")
-                        
-                except Exception as e:
-                    st.warning(f"⚠️ {model_name} error: {str(e)[:50]}...")
+        # Test each model individually
+        for model_name in model_selection:
+            st.write(f"**Testing {model_name}:**")
             
-            progress_bar.progress((i + 1) / len(model_selection))
+            try:
+                # Simple test first
+                if model_name == "Linear Trend":
+                    forecast_result = test_linear_trend(monthly_data, periods)
+                elif model_name == "Moving Average":
+                    forecast_result = test_moving_average(monthly_data, periods)
+                else:
+                    forecast_result = generate_forecast_safe(monthly_data, model_name, periods)
+                
+                if forecast_result is not None and len(forecast_result) > 0:
+                    forecasts[model_name] = forecast_result
+                    st.success(f"✅ {model_name} generated {len(forecast_result)} predictions")
+                    
+                    # Show sample forecast
+                    st.write(f"Sample forecast from {model_name}:")
+                    st.dataframe(forecast_result.head(3))
+                    
+                else:
+                    st.error(f"❌ {model_name} returned empty result")
+                    
+            except Exception as e:
+                st.error(f"❌ {model_name} failed with error: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
         
         if not forecasts:
-            st.error("❌ No forecasts generated. Try simpler models.")
+            st.error("❌ No forecasts generated. All models failed.")
+            
+            # Provide debugging information
+            st.write("**Debug Information:**")
+            st.write("Data types:")
+            st.write(monthly_data.dtypes)
+            st.write("Data info:")
+            st.write(monthly_data.describe())
+            
             return
         
         st.success(f"✅ Generated {len(forecasts)} successful forecasts!")
         
         # Display results
-        display_forecast_results(monthly_data, forecasts, performance, forecast_period)
-        
-        # Create ensemble if multiple models
-        if len(forecasts) > 1:
-            create_ensemble_analysis(monthly_data, forecasts, performance, forecast_period)
-        
-        # Business insights
-        create_business_insights(monthly_data, forecasts, performance)
+        display_forecast_results(monthly_data, forecasts, {}, forecast_period)
         
     except Exception as e:
         st.error(f"❌ Analysis error: {str(e)}")
-        st.info("💡 Try with fewer models or simpler options")
+        import traceback
+        st.code(traceback.format_exc())
+
+def prepare_monthly_data_debug(df):
+    """Prepare monthly data with extensive debugging"""
+    try:
+        st.write("**Data Preparation Debug:**")
+        st.write(f"Input shape: {df.shape}")
+        st.write(f"Input columns: {list(df.columns)}")
+        
+        # Show sample of input data
+        st.write("Sample input data:")
+        st.dataframe(df.head())
+        
+        # Check required columns
+        if 'YearMonth' not in df.columns:
+            st.error("Missing 'YearMonth' column")
+            return pd.DataFrame()
+            
+        if 'Total Line Amount' not in df.columns:
+            st.error("Missing 'Total Line Amount' column")
+            return pd.DataFrame()
+        
+        # Basic grouping
+        st.write("Grouping by YearMonth...")
+        
+        agg_dict = {'Total Line Amount': 'sum'}
+        
+        # Add optional columns if they exist
+        if 'Invoice No.' in df.columns:
+            agg_dict['Invoice No.'] = 'nunique'
+        if 'Cust Name' in df.columns:
+            agg_dict['Cust Name'] = 'nunique'
+        
+        monthly_data = df.groupby('YearMonth').agg(agg_dict).reset_index()
+        
+        # Rename columns
+        new_columns = ['YearMonth', 'Revenue']
+        if 'Invoice No.' in df.columns:
+            new_columns.append('Invoices')
+        if 'Cust Name' in df.columns:
+            new_columns.append('Customers')
+            
+        monthly_data.columns = new_columns
+        
+        st.write(f"After grouping shape: {monthly_data.shape}")
+        st.write("Sample grouped data:")
+        st.dataframe(monthly_data.head())
+        
+        # Convert dates
+        st.write("Converting dates...")
+        try:
+            monthly_data['YearMonth'] = pd.to_datetime(monthly_data['YearMonth'])
+        except Exception as e:
+            st.error(f"Date conversion failed: {e}")
+            return pd.DataFrame()
+        
+        # Sort by date
+        monthly_data = monthly_data.sort_values('YearMonth').reset_index(drop=True)
+        
+        # Add basic features
+        monthly_data['Month'] = monthly_data['YearMonth'].dt.month
+        monthly_data['Quarter'] = monthly_data['YearMonth'].dt.quarter
+        
+        st.write("Final prepared data:")
+        st.dataframe(monthly_data)
+        
+        # Validate revenue data
+        if monthly_data['Revenue'].isna().any():
+            st.warning("Some revenue values are NaN")
+            
+        if not (monthly_data['Revenue'] > 0).any():
+            st.error("No positive revenue values found")
+            return pd.DataFrame()
+        
+        return monthly_data
+        
+    except Exception as e:
+        st.error(f"Data preparation failed: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return pd.DataFrame()
+
+def test_linear_trend(monthly_data, periods):
+    """Ultra-simple linear trend test"""
+    try:
+        st.write("Testing linear trend...")
+        
+        # Get revenue values
+        revenue = monthly_data['Revenue'].values
+        st.write(f"Revenue data: {len(revenue)} points, range {revenue.min():.0f} to {revenue.max():.0f}")
+        
+        # Simple linear fit
+        x = np.arange(len(revenue))
+        slope = (revenue[-1] - revenue[0]) / (len(revenue) - 1) if len(revenue) > 1 else 0
+        
+        st.write(f"Calculated slope: {slope:.2f}")
+        
+        # Generate predictions
+        future_values = []
+        last_value = revenue[-1]
+        
+        for i in range(periods):
+            next_value = last_value + slope * (i + 1)
+            future_values.append(next_value)
+        
+        st.write(f"Generated {len(future_values)} predictions: {future_values}")
+        
+        # Create simple future dates
+        import datetime
+        today = datetime.datetime.now()
+        future_dates = [today + pd.DateOffset(months=i+1) for i in range(periods)]
+        
+        result = pd.DataFrame({
+            'Date': future_dates,
+            'Forecast': future_values,
+            'Model': 'Linear Trend'
+        })
+        
+        st.write("Linear trend result:")
+        st.dataframe(result)
+        
+        return result
+        
+    except Exception as e:
+        st.error(f"Linear trend test failed: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None
+
+def test_moving_average(monthly_data, periods):
+    """Ultra-simple moving average test"""
+    try:
+        st.write("Testing moving average...")
+        
+        # Get revenue values
+        revenue = monthly_data['Revenue'].values
+        st.write(f"Revenue data: {len(revenue)} points")
+        
+        # Calculate simple average of last 3 months
+        window = min(3, len(revenue))
+        avg_value = revenue[-window:].mean()
+        
+        st.write(f"Average of last {window} months: {avg_value:.2f}")
+        
+        # Generate predictions (all same value)
+        future_values = [avg_value] * periods
+        
+        st.write(f"Generated {len(future_values)} predictions (all {avg_value:.2f})")
+        
+        # Create simple future dates
+        import datetime
+        today = datetime.datetime.now()
+        future_dates = [today + pd.DateOffset(months=i+1) for i in range(periods)]
+        
+        result = pd.DataFrame({
+            'Date': future_dates,
+            'Forecast': future_values,
+            'Model': 'Moving Average'
+        })
+        
+        st.write("Moving average result:")
+        st.dataframe(result)
+        
+        return result
+        
+    except Exception as e:
+        st.error(f"Moving average test failed: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None
 
 def prepare_monthly_data(df):
     """Prepare monthly data with robust error handling"""
