@@ -21,6 +21,9 @@ statsmodels>=0.14.0
 # XGBoost (Usually works well)
 xgboost>=1.7.0
 
+prophet>=1.1.4
+lightgbm>=3.3.0
+
 # NOTES:
 # - Prophet and LightGBM are excluded as they can be problematic in cloud environments
 # - This gives you access to most forecasting models
