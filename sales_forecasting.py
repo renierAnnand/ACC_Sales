@@ -963,6 +963,4 @@ def create_advanced_overall_forecast(df, forecast_period, model_selection, confi
     """Backward compatibility wrapper"""
     return create_forecasting_analysis(df, forecast_period, model_selection)
 
-def get_available_models():
-    """Alias for backward compatibility"""
-    return get_available_models()
+# Note: get_available_models() function is already defined above, no need for alias
