@@ -1,405 +1,622 @@
-import streamlit as st
+#!/usr/bin/env python3
+"""
+ACC Sales Intelligence System - Customer Segmentation Analysis
+Advanced Analytics Dashboard for Sales Performance & Business Intelligence
+
+This module handles customer segmentation with proper timezone management
+and Saudi Riyal currency formatting.
+
+Author: ACC Sales Intelligence Team
+Date: July 2025
+"""
+
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import numpy as np
+from datetime import datetime, timedelta, timezone
+import pytz
+from typing import Dict, List, Tuple, Optional, Union
+import warnings
+import logging
+from dataclasses import dataclass
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-def create_customer_segmentation(df):
-    """
-    Create comprehensive customer segmentation analysis
-    """
-    st.header("👥 Customer Segmentation Analysis")
-    st.markdown("*All amounts in Saudi Riyal (SAR)*")
-    
-    if df.empty:
-        st.error("No data available for customer segmentation")
-        return
-    
-    # Create customer summary
-    customer_summary = create_customer_summary(df)
-    
-    if customer_summary.empty:
-        st.error("Unable to create customer summary")
-        return
-    
-    # Segmentation options
-    segmentation_type = st.selectbox(
-        "Select Segmentation Method",
-        ["RFM Analysis", "Value-Based Segmentation", "Geographic Segmentation", "Behavioral Segmentation"]
-    )
-    
-    if segmentation_type == "RFM Analysis":
-        create_rfm_analysis(df, customer_summary)
-    elif segmentation_type == "Value-Based Segmentation":
-        create_value_based_segmentation(customer_summary)
-    elif segmentation_type == "Geographic Segmentation":
-        create_geographic_segmentation(df)
-    elif segmentation_type == "Behavioral Segmentation":
-        create_behavioral_segmentation(df, customer_summary)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def create_customer_summary(df):
-    """
-    Create customer summary with key metrics
-    """
-    try:
-        # Calculate customer metrics
-        customer_metrics = df.groupby(['Cust No.', 'Cust Name', 'Country', 'Local', 'Cust Class Code']).agg({
-            'Total Line Amount': ['sum', 'mean', 'count'],
-            'Invoice Date': ['min', 'max'],
-            'QTY': 'sum',
-            'Profit': 'sum' if 'Profit' in df.columns else 'count'
-        }).reset_index()
-        
-        # Flatten column names
-        customer_metrics.columns = [
-            'Customer_No', 'Customer_Name', 'Country', 'Local_International', 'Customer_Class',
-            'Total_Revenue', 'Avg_Order_Value', 'Order_Count', 'First_Purchase', 'Last_Purchase',
-            'Total_Quantity', 'Total_Profit'
-        ]
-        
-        # Calculate additional metrics
-        customer_metrics['Days_Since_Last_Purchase'] = (
-            pd.Timestamp.now() - customer_metrics['Last_Purchase']
-        ).dt.days
-        
-        customer_metrics['Customer_Lifetime_Days'] = (
-            customer_metrics['Last_Purchase'] - customer_metrics['First_Purchase']
-        ).dt.days + 1
-        
-        customer_metrics['Purchase_Frequency'] = (
-            customer_metrics['Order_Count'] / customer_metrics['Customer_Lifetime_Days'] * 365
-        ).fillna(0)
-        
-        return customer_metrics
-        
-    except Exception as e:
-        st.error(f"Error creating customer summary: {e}")
-        return pd.DataFrame()
+# Saudi Arabia timezone
+SAUDI_TZ = pytz.timezone('Asia/Riyadh')
+UTC_TZ = pytz.UTC
 
-def create_rfm_analysis(df, customer_summary):
+@dataclass
+class CustomerMetrics:
+    """Data class for customer metrics"""
+    customer_id: str
+    recency_days: int
+    frequency: int
+    monetary_sar: float
+    avg_order_value_sar: float
+    total_orders: int
+    days_since_first_purchase: int
+    segment: str = ""
+
+class DateTimeHandler:
     """
-    Create RFM (Recency, Frequency, Monetary) analysis
+    Utility class to handle timezone-aware and timezone-naive datetime operations
+    Fixes the common error: Cannot subtract tz-naive and tz-aware datetime-like objects
     """
-    st.subheader("📊 RFM Analysis")
     
-    try:
-        # Calculate RFM scores
-        rfm_data = customer_summary.copy()
+    @staticmethod
+    def normalize_datetime(dt: Union[datetime, pd.Timestamp, str], target_tz: pytz.BaseTzInfo = SAUDI_TZ) -> datetime:
+        """
+        Normalize datetime to specified timezone, handling both naive and aware datetimes
         
-        # Recency (lower is better)
-        rfm_data['R_Score'] = pd.qcut(
-            rfm_data['Days_Since_Last_Purchase'].rank(method='first', ascending=False),
-            5, labels=[5, 4, 3, 2, 1]
-        ).astype(int)
-        
-        # Frequency (higher is better)
-        rfm_data['F_Score'] = pd.qcut(
-            rfm_data['Order_Count'].rank(method='first'),
-            5, labels=[1, 2, 3, 4, 5]
-        ).astype(int)
-        
-        # Monetary (higher is better)
-        rfm_data['M_Score'] = pd.qcut(
-            rfm_data['Total_Revenue'].rank(method='first'),
-            5, labels=[1, 2, 3, 4, 5]
-        ).astype(int)
-        
-        # Combined RFM Score
-        rfm_data['RFM_Score'] = (
-            rfm_data['R_Score'].astype(str) + 
-            rfm_data['F_Score'].astype(str) + 
-            rfm_data['M_Score'].astype(str)
-        )
-        
-        # Customer segments based on RFM
-        rfm_data['Customer_Segment'] = rfm_data.apply(classify_rfm_segment, axis=1)
-        
-        # Display RFM metrics
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # RFM segment distribution
-            segment_counts = rfm_data['Customer_Segment'].value_counts()
+        Args:
+            dt: Input datetime (can be naive, aware, string, or pandas Timestamp)
+            target_tz: Target timezone (default: Saudi Arabia)
             
-            fig = px.pie(
-                values=segment_counts.values,
-                names=segment_counts.index,
-                title='Customer Segment Distribution'
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        Returns:
+            Timezone-aware datetime in target timezone
+        """
+        if isinstance(dt, str):
+            dt = pd.to_datetime(dt)
         
-        with col2:
-            # RFM scatter plot
-            fig = px.scatter(
-                rfm_data,
-                x='F_Score',
-                y='M_Score',
-                color='Customer_Segment',
-                size='Total_Revenue',
-                title='RFM Scatter Plot (Frequency vs Monetary)',
-                hover_data=['Customer_Name', 'R_Score']
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        if isinstance(dt, pd.Timestamp):
+            dt = dt.to_pydatetime()
         
-        # RFM segment summary table
-        st.subheader("📋 RFM Segment Summary")
-        
-        segment_summary = rfm_data.groupby('Customer_Segment').agg({
-            'Customer_Name': 'count',
-            'Total_Revenue': ['sum', 'mean'],
-            'Order_Count': 'mean',
-            'Days_Since_Last_Purchase': 'mean'
-        }).round(2)
-        
-        segment_summary.columns = [
-            'Customer_Count', 'Total_Revenue_SAR', 'Avg_Revenue_Per_Customer_SAR',
-            'Avg_Order_Count', 'Avg_Days_Since_Last_Purchase'
-        ]
-        
-        # Format currency columns
-        segment_summary['Total_Revenue_SAR'] = segment_summary['Total_Revenue_SAR'].apply(lambda x: f"{x:,.0f} SAR")
-        segment_summary['Avg_Revenue_Per_Customer_SAR'] = segment_summary['Avg_Revenue_Per_Customer_SAR'].apply(lambda x: f"{x:,.0f} SAR")
-        
-        st.dataframe(segment_summary, use_container_width=True)
-        
-        # Top customers by segment
-        st.subheader("🏆 Top Customers by Segment")
-        
-        selected_segment = st.selectbox(
-            "Select segment to view top customers",
-            rfm_data['Customer_Segment'].unique()
-        )
-        
-        top_customers = rfm_data[
-            rfm_data['Customer_Segment'] == selected_segment
-        ].nlargest(10, 'Total_Revenue')[
-            ['Customer_Name', 'Total_Revenue', 'Order_Count', 'Days_Since_Last_Purchase', 'RFM_Score']
-        ].copy()
-        
-        # Format revenue column
-        top_customers['Total_Revenue'] = top_customers['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
-        
-        st.dataframe(top_customers, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error in RFM analysis: {e}")
-
-def classify_rfm_segment(row):
-    """
-    Classify customers into segments based on RFM scores
-    """
-    r, f, m = row['R_Score'], row['F_Score'], row['M_Score']
+        if dt is None:
+            return None
+            
+        # If datetime is naive, assume it's in target timezone
+        if dt.tzinfo is None:
+            dt = target_tz.localize(dt)
+        else:
+            # Convert to target timezone
+            dt = dt.astimezone(target_tz)
+            
+        return dt
     
-    if r >= 4 and f >= 4 and m >= 4:
-        return 'Champions'
-    elif r >= 3 and f >= 3 and m >= 3:
-        return 'Loyal Customers'
-    elif r >= 4 and f <= 2:
-        return 'New Customers'
-    elif r <= 2 and f >= 3 and m >= 3:
-        return 'At Risk'
-    elif r <= 2 and f <= 2 and m >= 3:
-        return 'Cannot Lose Them'
-    elif r <= 2 and f <= 2 and m <= 2:
-        return 'Lost Customers'
-    elif f >= 3 and m <= 2:
-        return 'Price Sensitive'
-    else:
-        return 'Others'
-
-def create_value_based_segmentation(customer_summary):
-    """
-    Create value-based customer segmentation
-    """
-    st.subheader("💰 Value-Based Segmentation")
+    @staticmethod
+    def make_naive(dt: datetime) -> datetime:
+        """Convert timezone-aware datetime to naive datetime"""
+        if dt.tzinfo is not None:
+            return dt.replace(tzinfo=None)
+        return dt
     
-    try:
-        # Define value segments based on total revenue
-        revenue_percentiles = customer_summary['Total_Revenue'].quantile([0.8, 0.95, 1.0])
+    @staticmethod
+    def calculate_days_between(start_dt: datetime, end_dt: datetime) -> int:
+        """
+        Calculate days between two datetimes, handling timezone issues
         
-        def classify_value_segment(revenue):
-            if revenue >= revenue_percentiles[0.95]:
-                return 'VIP Customers'
-            elif revenue >= revenue_percentiles[0.8]:
-                return 'High Value'
-            elif revenue >= customer_summary['Total_Revenue'].median():
-                return 'Medium Value'
+        Args:
+            start_dt: Start datetime
+            end_dt: End datetime
+            
+        Returns:
+            Number of days between dates
+        """
+        try:
+            # Normalize both datetimes to the same timezone
+            start_normalized = DateTimeHandler.normalize_datetime(start_dt)
+            end_normalized = DateTimeHandler.normalize_datetime(end_dt)
+            
+            # Calculate difference
+            diff = end_normalized - start_normalized
+            return abs(diff.days)
+            
+        except Exception as e:
+            logger.error(f"Error calculating days between dates: {e}")
+            # Fallback: convert to naive datetimes
+            start_naive = DateTimeHandler.make_naive(DateTimeHandler.normalize_datetime(start_dt))
+            end_naive = DateTimeHandler.make_naive(DateTimeHandler.normalize_datetime(end_dt))
+            diff = end_naive - start_naive
+            return abs(diff.days)
+
+class CurrencyFormatter:
+    """Handle Saudi Riyal currency formatting"""
+    
+    @staticmethod
+    def format_sar(amount: float, decimals: int = 2) -> str:
+        """Format amount in Saudi Riyal"""
+        return f"SAR {amount:,.{decimals}f}"
+    
+    @staticmethod
+    def format_sar_short(amount: float) -> str:
+        """Format large amounts with K/M abbreviations"""
+        if amount >= 1000000:
+            return f"SAR {amount/1000000:.1f}M"
+        elif amount >= 1000:
+            return f"SAR {amount/1000:.1f}K"
+        else:
+            return f"SAR {amount:.0f}"
+
+class CustomerSegmentation:
+    """
+    Main customer segmentation class with advanced analytics
+    """
+    
+    def __init__(self, timezone: str = 'Asia/Riyadh'):
+        self.timezone = pytz.timezone(timezone)
+        self.dt_handler = DateTimeHandler()
+        self.currency_formatter = CurrencyFormatter()
+        self.segments = {}
+        self.customer_metrics = []
+        
+    def load_sample_data(self) -> pd.DataFrame:
+        """
+        Generate sample customer data for demonstration
+        In production, replace this with your actual data loading logic
+        """
+        np.random.seed(42)
+        n_customers = 1000
+        
+        # Generate sample data with mixed timezone scenarios
+        current_time = datetime.now(self.timezone)
+        
+        customers = []
+        for i in range(n_customers):
+            customer_id = f"CUST_{i+1:04d}"
+            
+            # Random dates - some timezone-aware, some naive (common real-world scenario)
+            days_since_first = np.random.randint(30, 365*2)
+            first_purchase = current_time - timedelta(days=days_since_first)
+            
+            # Sometimes create naive datetime (common data issue)
+            if np.random.random() > 0.7:
+                first_purchase = first_purchase.replace(tzinfo=None)
+            
+            last_purchase_days = np.random.randint(1, min(days_since_first, 90))
+            last_purchase = current_time - timedelta(days=last_purchase_days)
+            
+            # Random order data
+            total_orders = np.random.poisson(5) + 1
+            total_spent = np.random.exponential(1000) * np.random.uniform(0.5, 3.0)
+            
+            customers.append({
+                'customer_id': customer_id,
+                'first_purchase_date': first_purchase,
+                'last_purchase_date': last_purchase,
+                'total_orders': total_orders,
+                'total_spent_sar': total_spent,
+                'avg_order_value_sar': total_spent / total_orders,
+                'customer_lifetime_days': days_since_first
+            })
+        
+        return pd.DataFrame(customers)
+    
+    def calculate_rfm_metrics(self, df: pd.DataFrame, reference_date: Optional[datetime] = None) -> pd.DataFrame:
+        """
+        Calculate RFM (Recency, Frequency, Monetary) metrics with proper datetime handling
+        
+        Args:
+            df: Customer data DataFrame
+            reference_date: Reference date for recency calculation (default: now)
+            
+        Returns:
+            DataFrame with RFM metrics
+        """
+        if reference_date is None:
+            reference_date = datetime.now(self.timezone)
+        else:
+            reference_date = self.dt_handler.normalize_datetime(reference_date)
+        
+        logger.info("Calculating RFM metrics...")
+        
+        rfm_data = []
+        
+        for _, row in df.iterrows():
+            try:
+                # Handle datetime operations safely
+                last_purchase = row['last_purchase_date']
+                first_purchase = row['first_purchase_date']
+                
+                # Calculate recency (days since last purchase)
+                recency_days = self.dt_handler.calculate_days_between(last_purchase, reference_date)
+                
+                # Calculate customer lifetime
+                lifetime_days = self.dt_handler.calculate_days_between(first_purchase, reference_date)
+                
+                # Create customer metrics
+                metrics = CustomerMetrics(
+                    customer_id=row['customer_id'],
+                    recency_days=recency_days,
+                    frequency=row['total_orders'],
+                    monetary_sar=row['total_spent_sar'],
+                    avg_order_value_sar=row['avg_order_value_sar'],
+                    total_orders=row['total_orders'],
+                    days_since_first_purchase=lifetime_days
+                )
+                
+                rfm_data.append({
+                    'customer_id': metrics.customer_id,
+                    'recency_days': metrics.recency_days,
+                    'frequency': metrics.frequency,
+                    'monetary_sar': metrics.monetary_sar,
+                    'avg_order_value_sar': metrics.avg_order_value_sar,
+                    'customer_lifetime_days': metrics.days_since_first_purchase
+                })
+                
+                self.customer_metrics.append(metrics)
+                
+            except Exception as e:
+                logger.error(f"Error processing customer {row['customer_id']}: {e}")
+                continue
+        
+        return pd.DataFrame(rfm_data)
+    
+    def assign_rfm_scores(self, rfm_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Assign RFM scores (1-5) based on quintiles
+        """
+        logger.info("Assigning RFM scores...")
+        
+        # Calculate quintiles for scoring (1 = worst, 5 = best)
+        rfm_df['R_Score'] = pd.qcut(rfm_df['recency_days'], 5, labels=[5,4,3,2,1])  # Lower recency = better
+        rfm_df['F_Score'] = pd.qcut(rfm_df['frequency'].rank(method='first'), 5, labels=[1,2,3,4,5])  # Higher frequency = better
+        rfm_df['M_Score'] = pd.qcut(rfm_df['monetary_sar'], 5, labels=[1,2,3,4,5])  # Higher monetary = better
+        
+        # Create RFM segment
+        rfm_df['RFM_Score'] = rfm_df['R_Score'].astype(str) + rfm_df['F_Score'].astype(str) + rfm_df['M_Score'].astype(str)
+        
+        return rfm_df
+    
+    def create_business_segments(self, rfm_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create business-meaningful customer segments based on RFM scores
+        """
+        logger.info("Creating business segments...")
+        
+        def assign_segment(row):
+            R, F, M = int(row['R_Score']), int(row['F_Score']), int(row['M_Score'])
+            
+            # Champions: High value, frequent, recent customers
+            if R >= 4 and F >= 4 and M >= 4:
+                return "Champions"
+            
+            # Loyal Customers: High frequency, good monetary
+            elif F >= 4 and M >= 3:
+                return "Loyal Customers"
+            
+            # Potential Loyalists: Recent customers with potential
+            elif R >= 4 and F >= 2 and M >= 2:
+                return "Potential Loyalists"
+            
+            # New Customers: Recent but low frequency/monetary
+            elif R >= 4 and F <= 2:
+                return "New Customers"
+            
+            # Promising: Recent, decent monetary but low frequency
+            elif R >= 3 and M >= 3 and F <= 2:
+                return "Promising"
+            
+            # Need Attention: Declining recent customers
+            elif R >= 3 and F >= 3 and M >= 3:
+                return "Need Attention"
+            
+            # About to Sleep: Declining recency but were good customers
+            elif R <= 3 and F >= 3 and M >= 3:
+                return "About to Sleep"
+            
+            # At Risk: Were good customers but haven't purchased recently
+            elif R <= 2 and F >= 3 and M >= 3:
+                return "At Risk"
+            
+            # Cannot Lose Them: High value but very low recency
+            elif R <= 2 and F >= 4 and M >= 4:
+                return "Cannot Lose Them"
+            
+            # Hibernating: Low recency, frequency, but decent monetary
+            elif R <= 2 and F <= 2 and M >= 3:
+                return "Hibernating"
+            
+            # Lost: Very low scores across all metrics
             else:
-                return 'Low Value'
+                return "Lost"
         
-        customer_summary['Value_Segment'] = customer_summary['Total_Revenue'].apply(classify_value_segment)
+        rfm_df['Segment'] = rfm_df.apply(assign_segment, axis=1)
+        return rfm_df
+    
+    def perform_kmeans_clustering(self, rfm_df: pd.DataFrame, n_clusters: int = 5) -> pd.DataFrame:
+        """
+        Perform K-means clustering on RFM data
+        """
+        logger.info(f"Performing K-means clustering with {n_clusters} clusters...")
         
-        # Visualization
-        col1, col2 = st.columns(2)
+        # Prepare data for clustering
+        features = ['recency_days', 'frequency', 'monetary_sar']
+        X = rfm_df[features].copy()
         
-        with col1:
-            # Value segment distribution
-            segment_dist = customer_summary['Value_Segment'].value_counts()
-            
-            fig = px.bar(
-                x=segment_dist.index,
-                y=segment_dist.values,
-                title='Customer Count by Value Segment',
-                color=segment_dist.values,
-                color_continuous_scale='viridis'
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # Handle any missing values
+        X = X.fillna(X.median())
         
-        with col2:
-            # Revenue by segment
-            revenue_by_segment = customer_summary.groupby('Value_Segment')['Total_Revenue'].sum()
-            
-            fig = px.pie(
-                values=revenue_by_segment.values,
-                names=revenue_by_segment.index,
-                title='Revenue Distribution by Value Segment'
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # Standardize features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
         
-        # Segment comparison
-        st.subheader("📊 Segment Comparison")
+        # Perform K-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(X_scaled)
         
-        segment_comparison = customer_summary.groupby('Value_Segment').agg({
-            'Customer_Name': 'count',
-            'Total_Revenue': ['sum', 'mean'],
-            'Avg_Order_Value': 'mean',
-            'Order_Count': 'mean'
+        # Add cluster labels
+        rfm_df['Cluster'] = cluster_labels
+        
+        # Calculate silhouette score
+        silhouette_avg = silhouette_score(X_scaled, cluster_labels)
+        logger.info(f"Silhouette Score: {silhouette_avg:.3f}")
+        
+        return rfm_df
+    
+    def generate_segment_summary(self, rfm_df: pd.DataFrame) -> Dict:
+        """
+        Generate comprehensive segment summary with Saudi Riyal formatting
+        """
+        logger.info("Generating segment summary...")
+        
+        summary = {}
+        
+        # Business segments summary
+        segment_summary = rfm_df.groupby('Segment').agg({
+            'customer_id': 'count',
+            'recency_days': 'mean',
+            'frequency': 'mean',
+            'monetary_sar': ['mean', 'sum'],
+            'avg_order_value_sar': 'mean'
         }).round(2)
         
-        segment_comparison.columns = [
-            'Customer_Count', 'Total_Revenue_SAR', 'Avg_Revenue_Per_Customer_SAR',
-            'Avg_Order_Value_SAR', 'Avg_Order_Count'
-        ]
+        segment_summary.columns = ['Count', 'Avg_Recency_Days', 'Avg_Frequency', 'Avg_Monetary_SAR', 'Total_Revenue_SAR', 'Avg_Order_Value_SAR']
+        
+        # Add percentage of total customers
+        total_customers = len(rfm_df)
+        segment_summary['Percentage'] = (segment_summary['Count'] / total_customers * 100).round(2)
         
         # Format currency columns
-        for col in ['Total_Revenue_SAR', 'Avg_Revenue_Per_Customer_SAR', 'Avg_Order_Value_SAR']:
-            segment_comparison[col] = segment_comparison[col].apply(lambda x: f"{x:,.0f} SAR")
+        currency_cols = ['Avg_Monetary_SAR', 'Total_Revenue_SAR', 'Avg_Order_Value_SAR']
+        for col in currency_cols:
+            segment_summary[f'{col}_Formatted'] = segment_summary[col].apply(self.currency_formatter.format_sar)
         
-        st.dataframe(segment_comparison, use_container_width=True)
+        summary['business_segments'] = segment_summary
         
-    except Exception as e:
-        st.error(f"Error in value-based segmentation: {e}")
-
-def create_geographic_segmentation(df):
-    """
-    Create geographic segmentation analysis
-    """
-    st.subheader("🌍 Geographic Segmentation")
+        # Overall statistics
+        summary['total_customers'] = total_customers
+        summary['total_revenue_sar'] = rfm_df['monetary_sar'].sum()
+        summary['avg_customer_value_sar'] = rfm_df['monetary_sar'].mean()
+        summary['total_orders'] = rfm_df['frequency'].sum()
+        
+        # Format overall stats
+        summary['total_revenue_sar_formatted'] = self.currency_formatter.format_sar(summary['total_revenue_sar'])
+        summary['avg_customer_value_sar_formatted'] = self.currency_formatter.format_sar(summary['avg_customer_value_sar'])
+        
+        return summary
     
-    try:
-        # Country analysis
-        col1, col2 = st.columns(2)
+    def create_segment_recommendations(self, summary: Dict) -> Dict[str, List[str]]:
+        """
+        Create actionable recommendations for each segment
+        """
+        recommendations = {
+            "Champions": [
+                "Reward with exclusive offers and early access to new products",
+                "Request referrals and testimonials",
+                "Implement VIP customer service",
+                "Cross-sell premium products"
+            ],
+            "Loyal Customers": [
+                "Maintain engagement with regular communication",
+                "Offer loyalty program benefits",
+                "Suggest complementary products",
+                "Prevent churn with personalized offers"
+            ],
+            "Potential Loyalists": [
+                "Encourage more frequent purchases with incentives",
+                "Provide product education and recommendations",
+                "Offer membership programs",
+                "Send targeted promotions"
+            ],
+            "New Customers": [
+                "Welcome series with onboarding content",
+                "Introduce product range gradually",
+                "Offer new customer discounts for repeat purchases",
+                "Collect feedback to improve experience"
+            ],
+            "Promising": [
+                "Increase purchase frequency with targeted campaigns",
+                "Offer bundle deals and volume discounts",
+                "Share success stories and use cases",
+                "Provide exceptional customer service"
+            ],
+            "Need Attention": [
+                "Send personalized offers to re-engage",
+                "Investigate reasons for declining activity",
+                "Offer customer service support",
+                "Create win-back campaigns"
+            ],
+            "About to Sleep": [
+                "Immediate re-engagement campaigns",
+                "Special discounts and limited-time offers",
+                "Survey to understand issues",
+                "Personalized recommendations"
+            ],
+            "At Risk": [
+                "Urgent retention campaigns",
+                "Deep discounts and free shipping",
+                "Personal outreach from account managers",
+                "Address service issues immediately"
+            ],
+            "Cannot Lose Them": [
+                "Priority customer service intervention",
+                "Exclusive offers they cannot refuse",
+                "Personal contact from senior management",
+                "Investigate and resolve any issues"
+            ],
+            "Hibernating": [
+                "Strong win-back campaigns",
+                "Show new product innovations",
+                "Limited-time reactivation offers",
+                "Survey for feedback and improvements"
+            ],
+            "Lost": [
+                "Final win-back attempt with best offers",
+                "Feedback collection for future improvements",
+                "Remove from active marketing to reduce costs",
+                "Focus resources on more promising segments"
+            ]
+        }
         
-        with col1:
-            country_metrics = df.groupby('Country').agg({
-                'Total Line Amount': 'sum',
-                'Cust Name': 'nunique',
-                'Invoice No.': 'nunique'
-            }).reset_index()
-            
-            country_metrics.columns = ['Country', 'Total_Revenue', 'Customer_Count', 'Order_Count']
-            country_metrics = country_metrics.sort_values('Total_Revenue', ascending=False)
-            
-            fig = px.bar(
-                country_metrics.head(10),
-                x='Country',
-                y='Total_Revenue',
-                title='Revenue by Country',
-                color='Total_Revenue',
-                color_continuous_scale='blues'
-            )
-            fig.update_layout(xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Local vs International
-            local_intl = df.groupby('Local').agg({
-                'Total Line Amount': 'sum',
-                'Cust Name': 'nunique'
-            }).reset_index()
-            
-            fig = px.pie(
-                local_intl,
-                values='Total Line Amount',
-                names='Local',
-                title='Local vs International Revenue'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Geographic summary table
-        st.subheader("📋 Geographic Summary")
-        
-        # Format the revenue column
-        display_country = country_metrics.copy()
-        display_country['Total_Revenue'] = display_country['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
-        
-        st.dataframe(display_country, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error in geographic segmentation: {e}")
-
-def create_behavioral_segmentation(df, customer_summary):
-    """
-    Create behavioral segmentation based on purchase patterns
-    """
-    st.subheader("🎯 Behavioral Segmentation")
+        return recommendations
     
+    def run_complete_analysis(self, df: Optional[pd.DataFrame] = None) -> Dict:
+        """
+        Run complete customer segmentation analysis
+        
+        Args:
+            df: Customer data DataFrame (if None, uses sample data)
+            
+        Returns:
+            Complete analysis results
+        """
+        try:
+            logger.info("Starting complete customer segmentation analysis...")
+            
+            # Load data
+            if df is None:
+                logger.info("Loading sample data...")
+                df = self.load_sample_data()
+            
+            # Calculate RFM metrics
+            rfm_df = self.calculate_rfm_metrics(df)
+            
+            # Assign RFM scores
+            rfm_df = self.assign_rfm_scores(rfm_df)
+            
+            # Create business segments
+            rfm_df = self.create_business_segments(rfm_df)
+            
+            # Perform clustering
+            rfm_df = self.perform_kmeans_clustering(rfm_df)
+            
+            # Generate summary
+            summary = self.generate_segment_summary(rfm_df)
+            
+            # Create recommendations
+            recommendations = self.create_segment_recommendations(summary)
+            
+            # Compile results
+            results = {
+                'rfm_data': rfm_df,
+                'summary': summary,
+                'recommendations': recommendations,
+                'analysis_date': datetime.now(self.timezone).isoformat(),
+                'total_customers_analyzed': len(rfm_df)
+            }
+            
+            logger.info("Customer segmentation analysis completed successfully!")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in complete analysis: {e}")
+            raise
+    
+    def print_analysis_report(self, results: Dict):
+        """
+        Print formatted analysis report
+        """
+        print("\n" + "="*80)
+        print("🏢 ACC SALES INTELLIGENCE SYSTEM")
+        print("📊 CUSTOMER SEGMENTATION ANALYSIS REPORT")
+        print("="*80)
+        
+        summary = results['summary']
+        
+        print(f"\n📈 OVERVIEW")
+        print(f"Analysis Date: {results['analysis_date']}")
+        print(f"Total Customers Analyzed: {summary['total_customers']:,}")
+        print(f"Total Revenue: {summary['total_revenue_sar_formatted']}")
+        print(f"Average Customer Value: {summary['avg_customer_value_sar_formatted']}")
+        print(f"Total Orders: {summary['total_orders']:,}")
+        
+        print(f"\n🎯 CUSTOMER SEGMENTS")
+        print("-" * 80)
+        
+        segments_df = summary['business_segments']
+        for segment, data in segments_df.iterrows():
+            print(f"\n{segment.upper()}")
+            print(f"  • Customers: {data['Count']:,} ({data['Percentage']:.1f}%)")
+            print(f"  • Avg Days Since Last Purchase: {data['Avg_Recency_Days']:.0f}")
+            print(f"  • Avg Orders per Customer: {data['Avg_Frequency']:.1f}")
+            print(f"  • Avg Customer Value: {data['Avg_Monetary_SAR_Formatted']}")
+            print(f"  • Total Segment Revenue: {data['Total_Revenue_SAR_Formatted']}")
+            print(f"  • Avg Order Value: {data['Avg_Order_Value_SAR_Formatted']}")
+        
+        print(f"\n💡 RECOMMENDATIONS")
+        print("-" * 80)
+        
+        recommendations = results['recommendations']
+        for segment, recs in recommendations.items():
+            if segment in segments_df.index:
+                print(f"\n{segment.upper()}:")
+                for i, rec in enumerate(recs, 1):
+                    print(f"  {i}. {rec}")
+        
+        print("\n" + "="*80)
+        print("✅ Analysis Complete - Ready for Action!")
+        print("="*80)
+
+def main():
+    """
+    Main function to demonstrate the customer segmentation system
+    """
     try:
-        # Purchase frequency analysis
-        col1, col2 = st.columns(2)
+        # Initialize the segmentation system
+        segmentation = CustomerSegmentation()
         
-        with col1:
-            # Frequency distribution
-            fig = px.histogram(
-                customer_summary,
-                x='Purchase_Frequency',
-                nbins=20,
-                title='Purchase Frequency Distribution',
-                labels={'Purchase_Frequency': 'Purchases per Year'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # Run complete analysis
+        results = segmentation.run_complete_analysis()
         
-        with col2:
-            # Order value distribution
-            fig = px.histogram(
-                customer_summary,
-                x='Avg_Order_Value',
-                nbins=20,
-                title='Average Order Value Distribution',
-                labels={'Avg_Order_Value': 'Average Order Value (SAR)'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # Print report
+        segmentation.print_analysis_report(results)
         
-        # Customer class analysis
-        st.subheader("🏢 Customer Class Analysis")
-        
-        class_analysis = df.groupby('Cust Class Code').agg({
-            'Total Line Amount': ['sum', 'mean'],
-            'Cust Name': 'nunique',
-            'QTY': 'sum'
-        }).round(2)
-        
-        class_analysis.columns = [
-            'Total_Revenue', 'Avg_Order_Value', 'Customer_Count', 'Total_Quantity'
-        ]
-        
-        # Format currency columns
-        display_class = class_analysis.copy()
-        display_class['Total_Revenue'] = display_class['Total_Revenue'].apply(lambda x: f"{x:,.0f} SAR")
-        display_class['Avg_Order_Value'] = display_class['Avg_Order_Value'].apply(lambda x: f"{x:,.0f} SAR")
-        
-        st.dataframe(display_class, use_container_width=True)
-        
-        # Class distribution chart
-        fig = px.bar(
-            x=class_analysis.index,
-            y=class_analysis['Total_Revenue'],
-            title='Revenue by Customer Class',
-            color=class_analysis['Total_Revenue'],
-            color_continuous_scale='viridis'
-        )
-        fig.update_layout(yaxis_title="Revenue (SAR)")
-        st.plotly_chart(fig, use_container_width=True)
+        # Save results (optional)
+        # results['rfm_data'].to_csv('customer_segments.csv', index=False)
         
     except Exception as e:
-        st.error(f"Error in behavioral segmentation: {e}")
+        logger.error(f"Error in main execution: {e}")
+        print(f"\n❌ Error: {e}")
+        print("\nThis error has been logged. Please check the datetime formats in your data.")
+
+if __name__ == "__main__":
+    main()
+
+# Example usage for debugging datetime issues:
+"""
+# Common datetime fixes:
+
+# 1. Fix timezone-naive and timezone-aware mixing:
+from datetime import datetime
+import pytz
+
+# Instead of this (causes error):
+# naive_dt = datetime(2024, 1, 1)
+# aware_dt = datetime.now(pytz.timezone('Asia/Riyadh'))
+# diff = aware_dt - naive_dt  # ERROR!
+
+# Do this:
+dt_handler = DateTimeHandler()
+naive_dt = datetime(2024, 1, 1)
+aware_dt = datetime.now(pytz.timezone('Asia/Riyadh'))
+
+# Normalize both to same timezone
+normalized_naive = dt_handler.normalize_datetime(naive_dt)
+normalized_aware = dt_handler.normalize_datetime(aware_dt)
+diff = normalized_aware - normalized_naive  # Works!
+
+# 2. Or make both naive:
+naive_dt1 = dt_handler.make_naive(normalized_naive)
+naive_dt2 = dt_handler.make_naive(normalized_aware)
+diff = naive_dt2 - naive_dt1  # Works!
+
+# 3. Use the safe calculation method:
+days_between = dt_handler.calculate_days_between(naive_dt, aware_dt)
+"""
