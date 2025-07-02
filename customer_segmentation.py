@@ -18,11 +18,31 @@ from typing import Dict, List, Tuple, Optional, Union
 import warnings
 import logging
 from dataclasses import dataclass
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score
-import matplotlib.pyplot as plt
-import seaborn as sns
+import json
+
+# Optional imports - will work without sklearn and seaborn
+try:
+    from sklearn.cluster import KMeans
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import silhouette_score
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    print("⚠️  sklearn not available - clustering features disabled")
+
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    print("⚠️  matplotlib not available - plotting features disabled")
+
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+except ImportError:
+    SEABORN_AVAILABLE = False
+    print("⚠️  seaborn not available - advanced plotting disabled")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -322,8 +342,15 @@ class CustomerSegmentation:
     
     def perform_kmeans_clustering(self, rfm_df: pd.DataFrame, n_clusters: int = 5) -> pd.DataFrame:
         """
-        Perform K-means clustering on RFM data
+        Perform K-means clustering on RFM data (if sklearn is available)
         """
+        if not SKLEARN_AVAILABLE:
+            logger.warning("sklearn not available - skipping clustering analysis")
+            # Create simple quintile-based clusters as fallback
+            rfm_df['Cluster'] = pd.qcut(rfm_df['monetary_sar'], n_clusters, labels=range(n_clusters))
+            logger.info(f"Using monetary value quintiles for {n_clusters} clusters")
+            return rfm_df
+        
         logger.info(f"Performing K-means clustering with {n_clusters} clusters...")
         
         # Prepare data for clustering
@@ -564,32 +591,182 @@ class CustomerSegmentation:
         print("✅ Analysis Complete - Ready for Action!")
         print("="*80)
 
-def main():
+def install_dependencies():
     """
-    Main function to demonstrate the customer segmentation system
+    Function to help install missing dependencies
+    """
+    missing_packages = []
+    
+    try:
+        import pandas
+    except ImportError:
+        missing_packages.append('pandas')
+    
+    try:
+        import numpy
+    except ImportError:
+        missing_packages.append('numpy')
+        
+    try:
+        import pytz
+    except ImportError:
+        missing_packages.append('pytz')
+    
+    if missing_packages:
+        print("❌ Missing required packages:", ", ".join(missing_packages))
+        print("\n📦 To install required packages, run:")
+        print(f"pip install {' '.join(missing_packages)}")
+        return False
+    
+    # Optional packages
+    optional_packages = []
+    if not SKLEARN_AVAILABLE:
+        optional_packages.append('scikit-learn')
+    if not MATPLOTLIB_AVAILABLE:
+        optional_packages.append('matplotlib')
+    if not SEABORN_AVAILABLE:
+        optional_packages.append('seaborn')
+    
+    if optional_packages:
+        print("⚠️  Optional packages for enhanced features:")
+        print(f"pip install {' '.join(optional_packages)}")
+    
+    return True
+
+def create_customer_segmentation(df=None):
+    """
+    Standalone function to create customer segmentation
+    This can be called directly from app.py
     """
     try:
+        # Check dependencies
+        if not install_dependencies():
+            return None
+        
         # Initialize the segmentation system
         segmentation = CustomerSegmentation()
         
         # Run complete analysis
-        results = segmentation.run_complete_analysis()
+        results = segmentation.run_complete_analysis(df)
         
         # Print report
         segmentation.print_analysis_report(results)
         
-        # Save results (optional)
-        # results['rfm_data'].to_csv('customer_segments.csv', index=False)
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in customer segmentation: {e}")
+        print(f"\n❌ Error: {e}")
+        print("\nTroubleshooting:")
+        print("1. Make sure all required packages are installed")
+        print("2. Check that your data has the required columns")
+        print("3. Verify datetime formats are correct")
+        return None
+
+def main():
+    """
+    Main function to demonstrate the customer segmentation system
+    """
+    print("🏢 ACC Sales Intelligence System - Customer Segmentation")
+    print("=" * 60)
+    
+    # Check if we can run the analysis
+    if not install_dependencies():
+        print("\n❌ Cannot run analysis - missing required dependencies")
+        return
+    
+    try:
+        # Run the segmentation analysis
+        results = create_customer_segmentation()
+        
+        if results:
+            print("\n✅ Analysis completed successfully!")
+            
+            # Save results (optional)
+            try:
+                results['rfm_data'].to_csv('customer_segments.csv', index=False)
+                print("📄 Results saved to 'customer_segments.csv'")
+            except Exception as e:
+                print(f"⚠️  Could not save CSV file: {e}")
         
     except Exception as e:
         logger.error(f"Error in main execution: {e}")
         print(f"\n❌ Error: {e}")
-        print("\nThis error has been logged. Please check the datetime formats in your data.")
+        print("\nThis error has been logged. Please check:")
+        print("1. All required packages are installed")
+        print("2. Data formats are correct")
+        print("3. File permissions for saving results")
+
+# Alternative entry points for different environments
+def run_analysis_safe(customer_data=None):
+    """
+    Safe entry point that handles all errors gracefully
+    Use this function if you're having import issues
+    """
+    try:
+        return create_customer_segmentation(customer_data)
+    except Exception as e:
+        print(f"Analysis failed: {e}")
+        return None
+
+def get_sample_analysis():
+    """
+    Get a sample analysis without running the full system
+    Useful for testing and demonstration
+    """
+    try:
+        segmentation = CustomerSegmentation()
+        sample_df = segmentation.load_sample_data()
+        
+        print(f"📊 Sample data generated: {len(sample_df)} customers")
+        print(f"Columns: {list(sample_df.columns)}")
+        print(f"Date range: {sample_df['first_purchase_date'].min()} to {sample_df['last_purchase_date'].max()}")
+        
+        return sample_df
+    except Exception as e:
+        print(f"Could not generate sample data: {e}")
+        return None
 
 if __name__ == "__main__":
     main()
 
-# Example usage for debugging datetime issues:
+# Quick test function - uncomment to test
+# if __name__ == "__main__":
+#     print("Running quick test...")
+#     sample_data = get_sample_analysis()
+#     if sample_data is not None:
+#         results = run_analysis_safe(sample_data)
+
+# Example usage for integration with app.py:
+"""
+# In your app.py file, use this simple import:
+
+try:
+    from customer_segmentation import create_customer_segmentation, run_analysis_safe
+    
+    # Use the safe function
+    results = run_analysis_safe(your_dataframe)
+    
+    if results:
+        print("Segmentation completed!")
+        # Use results['rfm_data'] for your dashboard
+        # Use results['summary'] for key metrics
+        # Use results['recommendations'] for actionable insights
+    else:
+        print("Segmentation failed - check logs")
+        
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Make sure customer_segmentation.py is in the same directory")
+
+# Required DataFrame columns for your data:
+# - customer_id: Unique customer identifier
+# - first_purchase_date: Date of first purchase
+# - last_purchase_date: Date of last purchase  
+# - total_orders: Number of orders
+# - total_spent_sar: Total amount spent in SAR
+# - avg_order_value_sar: Average order value in SAR
+"""
 """
 # Common datetime fixes:
 
