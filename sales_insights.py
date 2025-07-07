@@ -16,8 +16,6 @@ Features:
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-import seaborn as sns
 from typing import Dict, List, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
@@ -323,40 +321,7 @@ class SalesInsights:
             'unique_customers': overview['total_customers']
         }
     
-    # ====================== VISUALIZATION HELPERS ======================
-    
-    def plot_revenue_trend(self, save_path: Optional[str] = None):
-        """Plot monthly revenue trend."""
-        monthly_data = self.monthly_revenue_trend()
-        
-        plt.figure(figsize=(12, 6))
-        plt.plot(monthly_data['Date'], monthly_data['Total Line Amount'], marker='o', linewidth=2)
-        plt.title('Monthly Revenue Trend', fontsize=16, fontweight='bold')
-        plt.xlabel('Date')
-        plt.ylabel('Revenue ($)')
-        plt.xticks(rotation=45)
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-    
-    def plot_customer_segmentation(self, save_path: Optional[str] = None):
-        """Plot customer segmentation distribution."""
-        segments = self.customer_segmentation()
-        segment_counts = segments['Segment'].value_counts()
-        
-        plt.figure(figsize=(10, 6))
-        plt.pie(segment_counts.values, labels=segment_counts.index, autopct='%1.1f%%', startangle=90)
-        plt.title('Customer Segmentation Distribution', fontsize=16, fontweight='bold')
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-
-
-# ====================== USAGE EXAMPLE ======================
+    # ====================== USAGE EXAMPLE ======================
 
 def main():
     """Example usage of the Sales Insights module."""
