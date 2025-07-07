@@ -14,6 +14,7 @@ try:
     import discount_analysis
     import bu_benchmarking
     import product_insights
+    import sales_insights_streamlit  # New module for advanced insights
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
     st.error("Please make sure all module files are in the same directory as app.py")
@@ -138,6 +139,7 @@ def main():
                     "Select Analysis",
                     [
                         "Sales Dashboard",
+                        "Advanced Sales Insights",  # New comprehensive insights module
                         "Customer Segmentation", 
                         "Sales Forecasting",
                         "Salesperson Performance",
@@ -165,6 +167,8 @@ def main():
         # Route to selected page
         if page == "Sales Dashboard":
             sales_dashboard.create_sales_dashboard(df)
+        elif page == "Advanced Sales Insights":
+            sales_insights_streamlit.create_advanced_insights(df)
         elif page == "Customer Segmentation":
             customer_segmentation.create_customer_segmentation(df)
         elif page == "Sales Forecasting":
@@ -189,6 +193,14 @@ def main():
         - Key performance metrics
         - Monthly trends and patterns
         - Business unit performance comparison
+        
+        ### 🧠 **Advanced Sales Insights**
+        - Executive summary and KPIs
+        - Revenue trend analysis
+        - Customer intelligence and segmentation
+        - Profitability analytics
+        - Churn risk assessment
+        - Sales team efficiency metrics
         
         ### 👥 **Customer Segmentation**
         - Customer classification and analysis
