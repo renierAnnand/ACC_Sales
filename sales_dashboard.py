@@ -8,337 +8,321 @@ from datetime import datetime, timedelta
 
 def create_sales_dashboard(df):
     """
-    Create comprehensive sales dashboard with key metrics and visualizations
+    Create the main sales dashboard with key metrics and visualizations
     """
-    st.header("📊 Sales Dashboard")
-    st.markdown("*All amounts in Saudi Riyal (SAR)*")
+    st.title("📊 Sales Dashboard")
+    st.markdown("**Key performance metrics and business insights**")
     
-    if df.empty:
-        st.error("No data available for dashboard")
+    # Data validation
+    if df is None or df.empty:
+        st.error("No data available. Please upload a file first.")
         return
     
+    # Ensure required columns exist
+    required_columns = ['Total Line Amount', 'Invoice Date']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        st.error(f"Missing required columns: {missing_columns}")
+        return
+    
+    # Sidebar filters
+    with st.sidebar:
+        st.header("🔍 Filters")
+        
+        # Date range filter
+        if 'Invoice Date' in df.columns:
+            min_date = df['Invoice Date'].min()
+            max_date = df['Invoice Date'].max()
+            
+            date_range = st.date_input(
+                "Select Date Range",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date
+            )
+            
+            if len(date_range) == 2:
+                start_date, end_date = date_range
+                df_filtered = df[
+                    (df['Invoice Date'] >= pd.Timestamp(start_date)) & 
+                    (df['Invoice Date'] <= pd.Timestamp(end_date))
+                ]
+            else:
+                df_filtered = df.copy()
+        else:
+            df_filtered = df.copy()
+        
+        # Business Unit filter
+        if 'BU Name' in df.columns:
+            bu_options = ['All'] + list(df['BU Name'].dropna().unique())
+            selected_bu = st.selectbox("Business Unit", bu_options)
+            
+            if selected_bu != 'All':
+                df_filtered = df_filtered[df_filtered['BU Name'] == selected_bu]
+        
+        # Salesperson filter
+        if 'Salesperson Name' in df.columns:
+            sales_options = ['All'] + list(df['Salesperson Name'].dropna().unique())
+            selected_sales = st.selectbox("Salesperson", sales_options)
+            
+            if selected_sales != 'All':
+                df_filtered = df_filtered[df_filtered['Salesperson Name'] == selected_sales]
+    
     # Key Metrics Row
-    create_key_metrics(df)
+    st.subheader("📈 Key Performance Indicators")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_revenue = df_filtered['Total Line Amount'].sum()
+        st.metric(
+            "Total Revenue",
+            f"{total_revenue:,.0f} SAR",
+            delta=None
+        )
+    
+    with col2:
+        if 'Total Cost' in df_filtered.columns:
+            total_cost = df_filtered['Total Cost'].sum()
+            total_profit = total_revenue - total_cost
+            profit_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
+            st.metric(
+                "Total Profit",
+                f"{total_profit:,.0f} SAR",
+                delta=f"{profit_margin:.1f}% margin"
+            )
+        else:
+            st.metric("Total Orders", f"{len(df_filtered):,}")
+    
+    with col3:
+        if 'Invoice No.' in df_filtered.columns:
+            unique_orders = df_filtered['Invoice No.'].nunique()
+            avg_order_value = total_revenue / unique_orders if unique_orders > 0 else 0
+            st.metric("Average Order Value", f"{avg_order_value:,.0f} SAR")
+        else:
+            st.metric("Data Points", f"{len(df_filtered):,}")
+    
+    with col4:
+        if 'Cust Name' in df_filtered.columns:
+            unique_customers = df_filtered['Cust Name'].nunique()
+            st.metric("Unique Customers", f"{unique_customers:,}")
+        else:
+            st.metric("Date Range", f"{len(df_filtered['Invoice Date'].dt.date.unique())} days")
     
     # Charts Row 1
     col1, col2 = st.columns(2)
     
     with col1:
-        create_monthly_sales_trend(df)
+        # Monthly Revenue Trend
+        st.subheader("📈 Monthly Revenue Trend")
+        if 'Invoice Date' in df_filtered.columns:
+            monthly_data = df_filtered.groupby(df_filtered['Invoice Date'].dt.to_period('M')).agg({
+                'Total Line Amount': 'sum'
+            }).reset_index()
+            monthly_data['Month'] = monthly_data['Invoice Date'].astype(str)
+            
+            fig = px.line(
+                monthly_data,
+                x='Month',
+                y='Total Line Amount',
+                title='Monthly Revenue Trend',
+                markers=True
+            )
+            fig.update_layout(
+                xaxis_title="Month",
+                yaxis_title="Revenue (SAR)",
+                height=400
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Date column not available for trend analysis")
     
     with col2:
-        create_bu_performance_chart(df)
+        # Top Business Units
+        st.subheader("🏢 Revenue by Business Unit")
+        if 'BU Name' in df_filtered.columns:
+            bu_revenue = df_filtered.groupby('BU Name')['Total Line Amount'].sum().sort_values(ascending=False)
+            
+            fig = px.bar(
+                x=bu_revenue.values,
+                y=bu_revenue.index,
+                orientation='h',
+                title='Revenue by Business Unit',
+                labels={'x': 'Revenue (SAR)', 'y': 'Business Unit'}
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Business Unit data not available")
     
     # Charts Row 2
     col1, col2 = st.columns(2)
     
     with col1:
-        create_top_customers_chart(df)
+        # Top Customers
+        st.subheader("👥 Top Customers")
+        if 'Cust Name' in df_filtered.columns:
+            customer_revenue = df_filtered.groupby('Cust Name')['Total Line Amount'].sum().sort_values(ascending=False).head(10)
+            
+            fig = px.bar(
+                x=customer_revenue.index,
+                y=customer_revenue.values,
+                title='Top 10 Customers by Revenue',
+                labels={'x': 'Customer', 'y': 'Revenue (SAR)'}
+            )
+            fig.update_xaxes(tickangle=45)
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Customer data not available")
     
     with col2:
-        create_sales_by_salesperson(df)
+        # Sales Team Performance
+        st.subheader("🌟 Sales Team Performance")
+        if 'Salesperson Name' in df_filtered.columns:
+            sales_performance = df_filtered.groupby('Salesperson Name')['Total Line Amount'].sum().sort_values(ascending=False).head(8)
+            
+            fig = px.pie(
+                values=sales_performance.values,
+                names=sales_performance.index,
+                title='Revenue Distribution by Salesperson'
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Salesperson data not available")
     
-    # Charts Row 3
-    col1, col2 = st.columns(2)
+    # Detailed Tables Section
+    st.subheader("📋 Detailed Analysis")
     
-    with col1:
-        create_product_performance(df)
+    tab1, tab2, tab3 = st.tabs(["📊 Summary Statistics", "🏆 Top Performers", "📈 Trends"])
     
-    with col2:
-        create_customer_class_distribution(df)
-    
-    # Additional insights
-    create_geographic_analysis(df)
-
-def create_key_metrics(df):
-    """
-    Create key performance metrics cards
-    """
-    st.subheader("📈 Key Performance Metrics")
-    
-    # Calculate metrics
-    total_revenue = df['Total Line Amount'].sum()
-    total_cost = df['Total Cost'].sum() if 'Total Cost' in df.columns else 0
-    total_profit = total_revenue - total_cost
-    avg_order_value = df['Total Line Amount'].mean()
-    total_orders = df['Invoice No.'].nunique()
-    
-    # Display metrics in columns
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.metric(
-            label="Total Revenue",
-            value=f"{total_revenue:,.0f} SAR",
-            delta=f"{total_revenue/1000000:.1f}M SAR"
-        )
-    
-    with col2:
-        st.metric(
-            label="Total Profit", 
-            value=f"{total_profit:,.0f} SAR",
-            delta=f"{((total_profit/total_revenue)*100):.1f}% margin" if total_revenue > 0 else "0%"
-        )
-    
-    with col3:
-        st.metric(
-            label="Avg Order Value",
-            value=f"{avg_order_value:,.0f} SAR",
-            delta=f"Per order"
-        )
-    
-    with col4:
-        st.metric(
-            label="Total Orders",
-            value=f"{total_orders:,}",
-            delta=f"Unique invoices"
-        )
-    
-    with col5:
-        customers = df['Cust Name'].nunique()
-        st.metric(
-            label="Active Customers",
-            value=f"{customers:,}",
-            delta=f"Unique customers"
-        )
-
-def create_monthly_sales_trend(df):
-    """
-    Create monthly sales trend chart
-    """
-    st.subheader("📈 Monthly Sales Trend")
-    
-    try:
-        # Group by month
-        monthly_sales = df.groupby('YearMonth')['Total Line Amount'].sum().reset_index()
-        monthly_sales['YearMonth'] = pd.to_datetime(monthly_sales['YearMonth'])
-        monthly_sales = monthly_sales.sort_values('YearMonth')
+    with tab1:
+        st.markdown("**Dataset Summary**")
         
-        # Create line chart
-        fig = px.line(
-            monthly_sales,
-            x='YearMonth',
-            y='Total Line Amount',
-            title='Monthly Sales Revenue Trend',
-            markers=True
-        )
-        
-        fig.update_layout(
-            xaxis_title="Month",
-            yaxis_title="Revenue (SAR)",
-            showlegend=False,
-            height=400
-        )
-        
-        fig.update_traces(line_color='#1f77b4', line_width=3)
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error creating monthly trend chart: {e}")
-
-def create_bu_performance_chart(df):
-    """
-    Create business unit performance chart
-    """
-    st.subheader("🏢 Business Unit Performance")
-    
-    try:
-        # Group by BU
-        bu_performance = df.groupby('BU Name').agg({
-            'Total Line Amount': 'sum',
-            'Total Cost': 'sum',
-            'Invoice No.': 'nunique'
-        }).reset_index()
-        
-        bu_performance['Profit'] = bu_performance['Total Line Amount'] - bu_performance['Total Cost']
-        bu_performance = bu_performance.sort_values('Total Line Amount', ascending=True)
-        
-        # Create horizontal bar chart
-        fig = px.bar(
-            bu_performance,
-            x='Total Line Amount',
-            y='BU Name',
-            orientation='h',
-            title='Revenue by Business Unit',
-            color='Profit',
-            color_continuous_scale='RdYlGn'
-        )
-        
-        fig.update_layout(
-            xaxis_title="Revenue (SAR)",
-            yaxis_title="Business Unit",
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error creating BU performance chart: {e}")
-
-def create_top_customers_chart(df):
-    """
-    Create top customers chart
-    """
-    st.subheader("👥 Top Customers by Revenue")
-    
-    try:
-        # Group by customer
-        customer_sales = df.groupby('Cust Name')['Total Line Amount'].sum().reset_index()
-        top_customers = customer_sales.nlargest(10, 'Total Line Amount')
-        
-        # Create bar chart
-        fig = px.bar(
-            top_customers,
-            x='Total Line Amount',
-            y='Cust Name',
-            orientation='h',
-            title='Top 10 Customers by Revenue'
-        )
-        
-        fig.update_layout(
-            xaxis_title="Revenue (SAR)",
-            yaxis_title="Customer",
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error creating top customers chart: {e}")
-
-def create_sales_by_salesperson(df):
-    """
-    Create sales by salesperson chart
-    """
-    st.subheader("🏆 Sales by Salesperson")
-    
-    try:
-        # Group by salesperson
-        salesperson_sales = df.groupby('Salesperson Name').agg({
-            'Total Line Amount': 'sum',
-            'Invoice No.': 'nunique'
-        }).reset_index()
-        
-        salesperson_sales = salesperson_sales.sort_values('Total Line Amount', ascending=False).head(10)
-        
-        # Create bar chart
-        fig = px.bar(
-            salesperson_sales,
-            x='Salesperson Name',
-            y='Total Line Amount',
-            title='Top 10 Salespeople by Revenue',
-            color='Total Line Amount',
-            color_continuous_scale='viridis'
-        )
-        
-        fig.update_layout(
-            xaxis_title="Salesperson",
-            yaxis_title="Revenue (SAR)",
-            height=400,
-            xaxis_tickangle=-45
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error creating salesperson chart: {e}")
-
-def create_product_performance(df):
-    """
-    Create product performance chart
-    """
-    st.subheader("📦 Product Performance by Brand")
-    
-    try:
-        # Group by brand
-        brand_performance = df.groupby('Brand')['Total Line Amount'].sum().reset_index()
-        brand_performance = brand_performance.sort_values('Total Line Amount', ascending=False).head(8)
-        
-        # Create pie chart
-        fig = px.pie(
-            brand_performance,
-            values='Total Line Amount',
-            names='Brand',
-            title='Revenue Distribution by Brand'
-        )
-        
-        fig.update_layout(height=400)
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error creating product performance chart: {e}")
-
-def create_customer_class_distribution(df):
-    """
-    Create customer class distribution chart
-    """
-    st.subheader("🎯 Customer Class Distribution")
-    
-    try:
-        # Group by customer class
-        class_distribution = df.groupby('Cust Class Code').agg({
-            'Total Line Amount': 'sum',
-            'Cust Name': 'nunique'
-        }).reset_index()
-        
-        # Create donut chart
-        fig = px.pie(
-            class_distribution,
-            values='Total Line Amount',
-            names='Cust Class Code',
-            title='Revenue by Customer Class',
-            hole=0.4
-        )
-        
-        fig.update_layout(height=400)
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error creating customer class chart: {e}")
-
-def create_geographic_analysis(df):
-    """
-    Create geographic analysis
-    """
-    st.subheader("🌍 Geographic Analysis")
-    
-    try:
+        # Summary statistics
         col1, col2 = st.columns(2)
         
         with col1:
-            # Local vs International
-            local_intl = df.groupby('Local')['Total Line Amount'].sum().reset_index()
-            
-            fig = px.bar(
-                local_intl,
-                x='Local',
-                y='Total Line Amount',
-                title='Local vs International Sales',
-                color='Local'
-            )
-            
-            fig.update_layout(height=300, yaxis_title="Revenue (SAR)")
-            st.plotly_chart(fig, use_container_width=True)
+            st.markdown("**Revenue Statistics**")
+            revenue_stats = df_filtered['Total Line Amount'].describe()
+            stats_df = pd.DataFrame({
+                'Metric': ['Count', 'Mean', 'Std', 'Min', '25%', '50%', '75%', 'Max'],
+                'Value': [f"{revenue_stats['count']:,.0f}",
+                         f"{revenue_stats['mean']:,.2f} SAR",
+                         f"{revenue_stats['std']:,.2f} SAR",
+                         f"{revenue_stats['min']:,.2f} SAR",
+                         f"{revenue_stats['25%']:,.2f} SAR",
+                         f"{revenue_stats['50%']:,.2f} SAR",
+                         f"{revenue_stats['75%']:,.2f} SAR",
+                         f"{revenue_stats['max']:,.2f} SAR"]
+            })
+            st.dataframe(stats_df, use_container_width=True, hide_index=True)
         
         with col2:
-            # Sales by country
-            country_sales = df.groupby('Country')['Total Line Amount'].sum().reset_index()
-            country_sales = country_sales.sort_values('Total Line Amount', ascending=False).head(5)
+            st.markdown("**Data Overview**")
+            overview_data = {
+                'Metric': ['Total Records', 'Date Range', 'Business Units', 'Customers', 'Salespeople'],
+                'Value': [
+                    f"{len(df_filtered):,}",
+                    f"{df_filtered['Invoice Date'].min().strftime('%Y-%m-%d')} to {df_filtered['Invoice Date'].max().strftime('%Y-%m-%d')}" if 'Invoice Date' in df_filtered.columns else "N/A",
+                    f"{df_filtered['BU Name'].nunique()}" if 'BU Name' in df_filtered.columns else "N/A",
+                    f"{df_filtered['Cust Name'].nunique()}" if 'Cust Name' in df_filtered.columns else "N/A",
+                    f"{df_filtered['Salesperson Name'].nunique()}" if 'Salesperson Name' in df_filtered.columns else "N/A"
+                ]
+            }
+            overview_df = pd.DataFrame(overview_data)
+            st.dataframe(overview_df, use_container_width=True, hide_index=True)
+    
+    with tab2:
+        st.markdown("**Top Performers**")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if 'Cust Name' in df_filtered.columns:
+                st.markdown("**Top 10 Customers**")
+                top_customers = df_filtered.groupby('Cust Name').agg({
+                    'Total Line Amount': 'sum',
+                    'Invoice No.': 'nunique' if 'Invoice No.' in df_filtered.columns else 'count'
+                }).round(2).sort_values('Total Line Amount', ascending=False).head(10)
+                top_customers.columns = ['Revenue (SAR)', 'Orders']
+                st.dataframe(top_customers, use_container_width=True)
+        
+        with col2:
+            if 'Salesperson Name' in df_filtered.columns:
+                st.markdown("**Top Salespeople**")
+                top_sales = df_filtered.groupby('Salesperson Name').agg({
+                    'Total Line Amount': 'sum',
+                    'Cust Name': 'nunique' if 'Cust Name' in df_filtered.columns else 'count'
+                }).round(2).sort_values('Total Line Amount', ascending=False).head(10)
+                top_sales.columns = ['Revenue (SAR)', 'Customers']
+                st.dataframe(top_sales, use_container_width=True)
+    
+    with tab3:
+        st.markdown("**Trend Analysis**")
+        
+        if 'Invoice Date' in df_filtered.columns:
+            # Weekly trends
+            df_filtered['Week'] = df_filtered['Invoice Date'].dt.isocalendar().week
+            weekly_trends = df_filtered.groupby('Week')['Total Line Amount'].sum()
             
             fig = px.bar(
-                country_sales,
-                x='Country',
-                y='Total Line Amount',
-                title='Top Countries by Sales',
-                color='Total Line Amount',
-                color_continuous_scale='blues'
+                x=weekly_trends.index,
+                y=weekly_trends.values,
+                title='Weekly Revenue Distribution',
+                labels={'x': 'Week of Year', 'y': 'Revenue (SAR)'}
             )
-            
-            fig.update_layout(height=300, xaxis_tickangle=-45, yaxis_title="Revenue (SAR)")
             st.plotly_chart(fig, use_container_width=True)
             
-    except Exception as e:
-        st.error(f"Error creating geographic analysis: {e}")
+            # Show trends table
+            monthly_summary = df_filtered.groupby(df_filtered['Invoice Date'].dt.to_period('M')).agg({
+                'Total Line Amount': ['sum', 'mean', 'count']
+            }).round(2)
+            monthly_summary.columns = ['Total Revenue', 'Avg Transaction', 'Transaction Count']
+            monthly_summary.index = monthly_summary.index.astype(str)
+            st.dataframe(monthly_summary, use_container_width=True)
+        else:
+            st.info("Date information not available for trend analysis")
+    
+    # Export functionality
+    st.subheader("💾 Export Data")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📋 Export Summary"):
+            # Create summary report
+            summary_data = {
+                'Metric': ['Total Revenue', 'Total Records', 'Date Range', 'Business Units', 'Customers'],
+                'Value': [
+                    f"{df_filtered['Total Line Amount'].sum():,.2f} SAR",
+                    f"{len(df_filtered):,}",
+                    f"{df_filtered['Invoice Date'].min().strftime('%Y-%m-%d')} to {df_filtered['Invoice Date'].max().strftime('%Y-%m-%d')}" if 'Invoice Date' in df_filtered.columns else "N/A",
+                    f"{df_filtered['BU Name'].nunique()}" if 'BU Name' in df_filtered.columns else "N/A",
+                    f"{df_filtered['Cust Name'].nunique()}" if 'Cust Name' in df_filtered.columns else "N/A"
+                ]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            
+            csv = summary_df.to_csv(index=False)
+            st.download_button(
+                label="Download Summary CSV",
+                data=csv,
+                file_name=f"dashboard_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+    
+    with col2:
+        if st.button("📊 Export Filtered Data"):
+            csv = df_filtered.to_csv(index=False)
+            st.download_button(
+                label="Download Filtered Data CSV",
+                data=csv,
+                file_name=f"filtered_sales_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+    
+    with col3:
+        st.info(f"**Current View:** {len(df_filtered):,} records")
+        st.info(f"**Revenue:** {df_filtered['Total Line Amount'].sum():,.0f} SAR")
